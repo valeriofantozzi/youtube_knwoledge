@@ -1,17 +1,55 @@
-*.pyc
-*.pyo
-*.pyd
-*.pyw
-*.pyz
-*.pywz
-*.pyzw
-*.pyzwz
-*.pyzwzw
-*.pyzwzwzw
-*.pyzwzwzwzw
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
 
+# Virtual Environment
 .venv/
+venv/
+ENV/
+env/
 
-subtitles/ 
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-**/.DS_Store
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+data/vector_db/
+data/processed/chunks/
+data/processed/metadata/
+*.log
+logs/
+
+# Environment variables
+.env
+.env.local
+
+# Model cache (optional - uncomment if you want to exclude cached models)
+# ~/.cache/huggingface/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp

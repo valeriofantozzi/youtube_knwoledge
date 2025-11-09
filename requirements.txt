@@ -1,0 +1,28 @@
+# Core dependencies for Subtitle Embedding & Retrieval System
+
+# Embedding model
+sentence-transformers>=2.2.0
+
+# Deep learning framework (PyTorch)
+torch>=2.0.0
+
+# Vector database
+# NOTE: ChromaDB has compatibility issues with Python 3.14 (pydantic v1 incompatibility)
+# If using Python 3.14, you may need to wait for ChromaDB update or use Python 3.11/3.12
+chromadb>=0.4.0
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# CLI and UI
+rich>=13.0.0
+tqdm>=4.65.0
+
+# Configuration
+python-dotenv>=1.0.0
+
+# Testing (optional, for development)
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
