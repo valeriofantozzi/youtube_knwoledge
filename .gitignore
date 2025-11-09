@@ -53,3 +53,7 @@ htmlcov/
 *.tmp
 *.bak
 *.swp
+
+
+data/*
+*.srt

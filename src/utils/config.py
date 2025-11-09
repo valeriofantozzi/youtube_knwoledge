@@ -39,7 +39,19 @@ class Config:
         )
         
         # Processing Configuration
-        self.BATCH_SIZE = self._get_int("BATCH_SIZE", 128)
+        # Batch size will be auto-optimized if not explicitly set
+        batch_size_env = os.getenv("BATCH_SIZE")
+        if batch_size_env:
+            self.BATCH_SIZE = self._get_int("BATCH_SIZE", 128)
+        else:
+            # Auto-optimize batch size based on hardware
+            try:
+                from .performance_optimizer import get_performance_optimizer
+                optimizer = get_performance_optimizer()
+                self.BATCH_SIZE = optimizer.get_optimal_batch_size()
+            except Exception:
+                # Fallback to default
+                self.BATCH_SIZE = 128
         self.CHUNK_SIZE = self._get_int("CHUNK_SIZE", 300)
         self.CHUNK_OVERLAP = self._get_int("CHUNK_OVERLAP", 60)
         self.MIN_CHUNK_SIZE = self._get_int("MIN_CHUNK_SIZE", 50)
@@ -51,12 +63,24 @@ class Config:
         # Device Configuration
         device = os.getenv("DEVICE", "auto").lower()
         if device == "auto":
-            import torch
-            self.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-        elif device in ["cpu", "cuda"]:
+            # Use hardware detector for auto-detection (supports MPS)
+            try:
+                from .hardware_detector import get_hardware_detector
+                hardware_detector = get_hardware_detector()
+                self.DEVICE = hardware_detector.get_recommended_device()
+            except Exception:
+                # Fallback to basic detection
+                import torch
+                if torch.cuda.is_available():
+                    self.DEVICE = "cuda"
+                elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                    self.DEVICE = "mps"
+                else:
+                    self.DEVICE = "cpu"
+        elif device in ["cpu", "cuda", "mps"]:
             self.DEVICE = device
         else:
-            raise ValueError(f"Invalid DEVICE value: {device}. Must be 'auto', 'cpu', or 'cuda'")
+            raise ValueError(f"Invalid DEVICE value: {device}. Must be 'auto', 'cpu', 'cuda', or 'mps'")
         
         self.CUDA_VISIBLE_DEVICES = os.getenv("CUDA_VISIBLE_DEVICES", "0")
         
@@ -76,7 +100,19 @@ class Config:
         self.LOG_FILE = str(log_path)
         
         # Performance Configuration
-        self.MAX_WORKERS = self._get_int("MAX_WORKERS", 4)
+        # Auto-optimize workers if not explicitly set
+        workers_env = os.getenv("MAX_WORKERS")
+        if workers_env:
+            self.MAX_WORKERS = self._get_int("MAX_WORKERS", os.cpu_count() or 1)
+        else:
+            # Auto-optimize based on hardware
+            try:
+                from .performance_optimizer import get_performance_optimizer
+                optimizer = get_performance_optimizer()
+                self.MAX_WORKERS = optimizer.get_optimal_workers("cpu_bound")
+            except Exception:
+                # Fallback to CPU count
+                self.MAX_WORKERS = os.cpu_count() or 1
         self.ENABLE_CHECKPOINTING = self._get_bool("ENABLE_CHECKPOINTING", True)
         self.CHECKPOINT_INTERVAL = self._get_int("CHECKPOINT_INTERVAL", 1000)
         
