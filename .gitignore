@@ -13,3 +13,5 @@
 .venv/
 
 subtitles/ 
+
+**/.DS_Store
