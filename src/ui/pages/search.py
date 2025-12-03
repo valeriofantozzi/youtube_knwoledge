@@ -128,8 +128,9 @@ def perform_search(
             results["metadatas"][0],
             results["distances"][0]
         )):
-            # Convert distance to similarity (cosine distance -> similarity)
-            similarity = 1 - distance
+            # Convert distance to similarity
+            # ChromaDB default is Squared L2: distance = 2(1 - similarity) -> similarity = 1 - distance/2
+            similarity = 1 - (distance / 2)
             
             # Filter by minimum score
             if similarity < min_score:

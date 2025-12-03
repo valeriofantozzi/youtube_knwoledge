@@ -227,9 +227,9 @@ class SimilaritySearch:
             metadatas,
             distances
         )):
-            # Convert distance to similarity score (ChromaDB uses cosine distance)
-            # Cosine distance = 1 - cosine similarity, so similarity = 1 - distance
-            similarity_score = 1.0 - distance
+            # Convert distance to similarity score
+            # ChromaDB default is Squared L2: distance = 2(1 - similarity) -> similarity = 1 - distance/2
+            similarity_score = 1.0 - (distance / 2)
             
             # Apply score threshold
             if score_threshold is not None and similarity_score < score_threshold:

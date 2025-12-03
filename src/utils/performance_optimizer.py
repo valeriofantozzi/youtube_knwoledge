@@ -4,6 +4,7 @@ Performance Optimizer Module
 Optimizes performance based on hardware capabilities and system resources.
 """
 
+import os
 import time
 import torch
 from typing import Dict, Optional, Tuple, Literal
@@ -47,6 +48,80 @@ class PerformanceOptimizer:
         self.logger = get_default_logger()
         self._optimal_batch_size: Optional[int] = None
         self._benchmark_results: Optional[Dict] = None
+        self._threads_configured: bool = False
+    
+    def configure_pytorch_threads(
+        self,
+        cpu_percentage: Optional[float] = None,
+        force_reconfigure: bool = False
+    ) -> int:
+        """
+        Configure PyTorch to use optimal number of CPU threads.
+        
+        This is essential for maximizing CPU utilization during embedding generation.
+        PyTorch defaults to a conservative number of threads, which can result in
+        low CPU usage even when more cores are available.
+        
+        Args:
+            cpu_percentage: Percentage of CPU cores to use (0.0-1.0). 
+                           If None, reads from MAX_WORKERS_PERCENTAGE env var or defaults to 0.75.
+            force_reconfigure: Force reconfiguration even if already configured.
+        
+        Returns:
+            Number of threads configured.
+        """
+        if self._threads_configured and not force_reconfigure:
+            current_threads = torch.get_num_threads()
+            self.logger.debug(f"PyTorch threads already configured: {current_threads}")
+            return current_threads
+        
+        # Get CPU percentage from parameter, env var, or default
+        if cpu_percentage is None:
+            try:
+                cpu_percentage = float(os.getenv("MAX_WORKERS_PERCENTAGE", "0.75"))
+            except ValueError:
+                cpu_percentage = 0.75
+        
+        # Validate percentage
+        cpu_percentage = max(0.1, min(1.0, cpu_percentage))
+        
+        # Get hardware profile
+        profile = self.hardware_detector.get_profile()
+        cpu_cores = profile.get("cpu", {}).get("cores_logical", os.cpu_count() or 1)
+        
+        # Calculate optimal number of threads
+        optimal_threads = max(1, int(cpu_cores * cpu_percentage))
+        
+        # Configure PyTorch threads
+        # num_threads: for intra-op parallelism (within single operation)
+        torch.set_num_threads(optimal_threads)
+        
+        # num_interop_threads: for inter-op parallelism (between operations)
+        # Use a smaller number to avoid thread contention
+        # Note: set_num_interop_threads can only be called once before parallel work starts
+        interop_threads = max(1, optimal_threads // 2)
+        try:
+            torch.set_num_interop_threads(interop_threads)
+        except RuntimeError:
+            # Already set or parallel work has started, skip
+            self.logger.debug(
+                "Inter-op threads already configured or parallel work started, skipping"
+            )
+        
+        # Set environment variables for other libraries that use them
+        # (tokenizers, OpenMP, etc.)
+        os.environ["OMP_NUM_THREADS"] = str(optimal_threads)
+        os.environ["MKL_NUM_THREADS"] = str(optimal_threads)
+        os.environ["TOKENIZERS_PARALLELISM"] = "true"
+        
+        self._threads_configured = True
+        
+        self.logger.info(
+            f"Configured PyTorch threads: {optimal_threads} intra-op, {interop_threads} inter-op "
+            f"({cpu_percentage*100:.0f}% of {cpu_cores} CPU cores)"
+        )
+        
+        return optimal_threads
     
     def get_optimal_batch_size(
         self,
@@ -388,6 +463,15 @@ class PerformanceOptimizer:
         profile = self.hardware_detector.get_profile()
         device = profile.get("gpu", {}).get("device", "cpu")
         
+        # Get CPU percentage from env or default
+        try:
+            cpu_percentage = float(os.getenv("MAX_WORKERS_PERCENTAGE", "0.75"))
+        except ValueError:
+            cpu_percentage = 0.75
+        
+        cpu_cores = profile.get("cpu", {}).get("cores_logical", os.cpu_count() or 1)
+        optimal_threads = max(1, int(cpu_cores * cpu_percentage))
+        
         recommendations = {
             "device": device,
             "optimal_batch_size": self.get_optimal_batch_size(device=device),
@@ -397,6 +481,9 @@ class PerformanceOptimizer:
             "memory_threshold_mb": self.get_memory_threshold_mb(),
             "cache_clear_interval": self.get_cache_clear_interval(),
             "optimization_preset": self.get_optimization_preset(),
+            "pytorch_threads": optimal_threads,
+            "cpu_cores": cpu_cores,
+            "cpu_percentage": cpu_percentage,
         }
         
         return recommendations

@@ -103,3 +103,39 @@ def test_singleton_pattern():
     optimizer2 = get_performance_optimizer()
     assert optimizer1 is optimizer2
 
+
+def test_configure_pytorch_threads():
+    """Test PyTorch thread configuration."""
+    import torch
+    
+    optimizer = PerformanceOptimizer()
+    
+    # Test thread configuration with specific percentage
+    threads = optimizer.configure_pytorch_threads(cpu_percentage=0.5, force_reconfigure=True)
+    
+    assert threads >= 1
+    assert torch.get_num_threads() == threads
+    
+    # Test that reconfiguration is skipped without force
+    original_threads = torch.get_num_threads()
+    optimizer.configure_pytorch_threads(cpu_percentage=0.25)  # Should be skipped
+    assert torch.get_num_threads() == original_threads
+    
+    # Test forced reconfiguration
+    new_threads = optimizer.configure_pytorch_threads(cpu_percentage=0.75, force_reconfigure=True)
+    assert new_threads >= 1
+    assert torch.get_num_threads() == new_threads
+
+
+def test_recommendations_include_thread_info():
+    """Test that recommendations include PyTorch thread information."""
+    optimizer = PerformanceOptimizer()
+    recommendations = optimizer.get_recommendations()
+    
+    assert "pytorch_threads" in recommendations
+    assert "cpu_cores" in recommendations
+    assert "cpu_percentage" in recommendations
+    assert recommendations["pytorch_threads"] >= 1
+    assert recommendations["cpu_cores"] >= 1
+    assert 0 < recommendations["cpu_percentage"] <= 1.0
+

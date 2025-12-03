@@ -286,7 +286,7 @@ def generate_visualization(
                     n_components=n_components,
                     random_state=42,
                     perplexity=30,
-                    n_iter=1000
+                    max_iter=1000
                 )
                 reduced = reducer.fit_transform(embeddings_array)
             else:  # PCA

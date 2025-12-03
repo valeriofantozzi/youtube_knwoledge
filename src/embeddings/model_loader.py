@@ -61,6 +61,15 @@ class ModelLoader:
         self.logger.info(f"Device: {self.device}")
 
         try:
+            # Configure PyTorch threads for optimal CPU utilization
+            # This is especially important when using CPU for embedding generation
+            try:
+                from ..utils.performance_optimizer import get_performance_optimizer
+                optimizer = get_performance_optimizer()
+                optimizer.configure_pytorch_threads()
+            except Exception as e:
+                self.logger.debug(f"PyTorch thread configuration skipped: {e}")
+            
             # Load model with sentence-transformers
             self.model = SentenceTransformer(
                 self.model_name,
