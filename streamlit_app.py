@@ -70,6 +70,23 @@ def render_sidebar() -> str:
     st.sidebar.title(f"{ICONS['search']} Vector DB Explorer")
     st.sidebar.markdown("---")
     
+    # Determine default index from query params
+    default_index = 0
+    try:
+        # Try new API first
+        params = st.query_params
+        page_param = params.get("page")
+    except:
+        # Fallback to old API
+        try:
+            params = st.experimental_get_query_params()
+            page_param = params.get("page", [None])[0]
+        except:
+            page_param = None
+            
+    if page_param == "ai_search":
+        default_index = 3
+    
     # Navigation
     page = st.sidebar.radio(
         "Navigation",
@@ -79,6 +96,7 @@ def render_sidebar() -> str:
             f"{ICONS['search']} Search",
             "🤖 AI Search",
         ],
+        index=default_index,
         label_visibility="collapsed",
         key="nav_radio"
     )

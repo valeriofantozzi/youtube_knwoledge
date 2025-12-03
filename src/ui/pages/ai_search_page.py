@@ -6,16 +6,45 @@ from src.ai_search.graph import build_graph
 from src.ai_search.state import AgentState
 from src.ui.theme import ICONS
 
+@st.dialog("📄 Document Details", width="large")
+def view_document(filename, score, text, metadata):
+    st.markdown(f"### {filename}")
+    st.caption(f"Relevance Score: {score}")
+    # st.divider()
+    
+    # Collapsible content section
+    with st.expander("📄 Content", expanded=True):
+        st.markdown(text)
+    # Collapsible metadata section (default collapsed)
+    if metadata:
+        with st.expander("📋 Metadata", expanded=False):
+            # Convert metadata to dict if it's not already
+            if isinstance(metadata, dict):
+                metadata_dict = metadata
+            else:
+                metadata_dict = vars(metadata) if hasattr(metadata, '__dict__') else {"type": str(type(metadata))}
+            st.json(metadata_dict)
+
 def render_sources_carousel(documents):
     """
     Render retrieved documents using Streamlit native components.
     """
     if not documents:
         return
-
-    # st.markdown("### Sources")
     
-    # Use columns to display documents side-by-side
+    # Add custom CSS for fixed button dimensions
+    st.markdown(
+        """
+        <style>
+        .source-btn button {
+            height: 60px !important;
+            min-height: 60px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    
     cols = st.columns(len(documents))
     
     for col, doc in zip(cols, documents):
@@ -34,26 +63,21 @@ def render_sources_carousel(documents):
 
             score_display = f"{score:.2f}" if score is not None else "N/A"
             
-            # Determine color based on score
+            # Determine icon based on score
             if score is not None and score >= 0.7:
-                color = "#10b981"  # Green for high relevance
+                score_icon = "🟢"
             elif score is not None and score >= 0.4:
-                color = "#f59e0b"  # Amber for medium relevance
+                score_icon = "🟡"
             else:
-                color = "#ef4444"  # Red for low relevance
+                score_icon = "🔴"
             
-            # Use container with border to simulate a card
-            with st.container(height=100, border=True):
-                st.markdown(
-                    f"""
-                    <div style='display: flex; align-items: center; gap: 10px; margin-bottom: 8px;'>
-                        <div style='width: 25px; height: 25px; border-radius: 50%; background-color: {color}; display: flex; align-items: center; justify-content: center; color: white; font-size: 10px; flex-shrink: 0;'>{score_display}</div>
-                        <div style='white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.85rem;' title='{filename}'>{filename}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-                st.markdown(f"<small>{text[:100]}...</small>", unsafe_allow_html=True)
+            # Combine score and filename in one button
+            truncated_filename = filename if len(filename) <= 40 else filename[:30] + "..."
+            label = f"{score_icon} {truncated_filename}"
+            st.markdown(f'<div class="source-btn">', unsafe_allow_html=True)
+            if st.button(label, key=f"btn_{id(doc)}", help=filename, use_container_width=True):
+                view_document(filename, score_display, text, metadata)
+            st.markdown('</div>', unsafe_allow_html=True)
 
 def render_ai_search_page():
     """
