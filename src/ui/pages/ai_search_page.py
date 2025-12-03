@@ -6,6 +6,10 @@ from src.ai_search.graph import build_graph
 from src.ai_search.state import AgentState
 from src.ui.theme import ICONS
 
+def set_suggested_query(query):
+    """Callback to set the suggested query."""
+    st.session_state.suggested_query = query
+
 @st.dialog("📄 Document Details", width="large")
 def view_document(filename, score, text, metadata):
     st.markdown(f"### {filename}")
@@ -98,21 +102,56 @@ def render_ai_search_page():
             except Exception as e:
                 st.error(f"Failed to initialize AI Agent: {e}")
                 return
+    
+    # Handle suggested query click
+    if "suggested_query" in st.session_state:
+        suggested = st.session_state.pop("suggested_query")
+        st.session_state.pending_query = suggested
 
     # Display chat messages
-    for message in st.session_state.messages:
+    for idx, message in enumerate(st.session_state.messages):
         role = "user" if isinstance(message, HumanMessage) else "assistant"
         with st.chat_message(role):
             st.markdown(message.content)
             
             # Render sources if available in additional_kwargs
-            if isinstance(message, AIMessage) and "documents" in message.additional_kwargs:
-                docs = message.additional_kwargs["documents"]
-                if docs:
+            if isinstance(message, AIMessage):
+                kwargs = message.additional_kwargs
+                docs = kwargs.get("documents", [])
+                needs_clarification = kwargs.get("needs_clarification", False)
+                query_analysis = kwargs.get("query_analysis", {})
+                
+                # Show suggested queries if clarification was needed
+                if needs_clarification and query_analysis:
+                    suggested = query_analysis.get("suggested_queries", [])
+                    if suggested:
+                        st.markdown("---")
+                        st.markdown("**💡 Try asking:**")
+                        cols = st.columns(min(len(suggested), 3))
+                        for i, suggestion in enumerate(suggested[:3]):
+                            with cols[i]:
+                                st.button(
+                                    f"📝 {suggestion}", 
+                                    key=f"hist_suggest_{idx}_{i}",
+                                    on_click=set_suggested_query,
+                                    args=(suggestion,),
+                                    use_container_width=True
+                                )
+
+                # Only show documents if not a clarification response
+                if docs and not needs_clarification:
                     render_sources_carousel(docs)
 
-    # Chat input
-    if prompt := st.chat_input("Ask a question..."):
+    # Capture user input from chat box (always render it)
+    user_input = st.chat_input("Ask a question...")
+    
+    # Check for pending query from suggestions
+    pending_query = st.session_state.pop("pending_query", None)
+    
+    # Determine which prompt to use (priority to pending_query)
+    prompt = pending_query if pending_query else user_input
+    
+    if prompt:
         # Add user message to history
         st.session_state.messages.append(HumanMessage(content=prompt))
         with st.chat_message("user"):
@@ -128,7 +167,10 @@ def render_ai_search_page():
                         "messages": st.session_state.messages,
                         "question": prompt,
                         "documents": [],
-                        "generation": ""
+                        "generation": "",
+                        "query_analysis": None,
+                        "needs_clarification": False,
+                        "clarification_response": None
                     })
                     
                     # Run graph
@@ -136,14 +178,42 @@ def render_ai_search_page():
                     
                     answer = response.get("generation", "I couldn't generate an answer.")
                     documents = response.get("documents", [])
+                    needs_clarification = response.get("needs_clarification", False)
+                    query_analysis = response.get("query_analysis", {})
                     
                     message_placeholder.markdown(answer)
                     
-                    # Render sources for the new message
-                    if documents:
+                    # Show suggested queries if clarification was needed
+                    if needs_clarification and query_analysis:
+                        suggested = query_analysis.get("suggested_queries", [])
+                        if suggested:
+                            st.markdown("---")
+                            st.markdown("**💡 Try asking:**")
+                            cols = st.columns(min(len(suggested), 3))
+                            for idx, suggestion in enumerate(suggested[:3]):
+                                with cols[idx]:
+                                    # Use a key that matches what will be in history (len(messages) is the index of this new message)
+                                    msg_idx = len(st.session_state.messages)
+                                    st.button(
+                                        f"📝 {suggestion}", 
+                                        key=f"hist_suggest_{msg_idx}_{idx}",
+                                        on_click=set_suggested_query,
+                                        args=(suggestion,),
+                                        use_container_width=True
+                                    )
+                    
+                    # Render sources for the new message (only if we got actual results)
+                    if documents and not needs_clarification:
                         render_sources_carousel(documents)
                     
                     # Add AI message to history with documents
-                    st.session_state.messages.append(AIMessage(content=answer, additional_kwargs={"documents": documents}))
+                    st.session_state.messages.append(AIMessage(
+                        content=answer, 
+                        additional_kwargs={
+                            "documents": documents,
+                            "needs_clarification": needs_clarification,
+                            "query_analysis": query_analysis
+                        }
+                    ))
                 except Exception as e:
                     st.error(f"An error occurred: {e}")
