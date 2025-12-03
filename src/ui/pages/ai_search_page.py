@@ -5,6 +5,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from src.ai_search.graph import build_graph
 from src.ai_search.state import AgentState
 from src.ui.theme import ICONS
+from src.ui.components.thinking_display import render_thinking_status_simple
 
 def set_suggested_query(query):
     """Callback to set the suggested query."""
@@ -90,6 +91,28 @@ def render_ai_search_page():
     st.title(f"{ICONS.get('search', '🤖')} AI Search Assistant")
     st.markdown("Ask questions about your documents and get AI-generated answers based on the content.")
     
+    # Add auto-scroll JavaScript
+    st.markdown("""
+    <script>
+    window.addEventListener('load', function() {
+        setTimeout(() => {
+            window.scrollTo(0, document.body.scrollHeight);
+        }, 100);
+    });
+    
+    // Also scroll when mutations happen (new content added)
+    const observer = new MutationObserver(() => {
+        window.scrollTo(0, document.body.scrollHeight);
+    });
+    
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: false
+    });
+    </script>
+    """, unsafe_allow_html=True)
+    
     # Initialize chat history
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -108,8 +131,9 @@ def render_ai_search_page():
         suggested = st.session_state.pop("suggested_query")
         st.session_state.pending_query = suggested
 
-    # Display chat messages
-    for idx, message in enumerate(st.session_state.messages):
+    # Display chat messages (excluding the one being processed in this render)
+    messages_to_display = st.session_state.messages
+    for idx, message in enumerate(messages_to_display):
         role = "user" if isinstance(message, HumanMessage) else "assistant"
         with st.chat_message(role):
             st.markdown(message.content)
@@ -121,23 +145,6 @@ def render_ai_search_page():
                 needs_clarification = kwargs.get("needs_clarification", False)
                 query_analysis = kwargs.get("query_analysis", {})
                 
-                # Show suggested queries if clarification was needed
-                if needs_clarification and query_analysis:
-                    suggested = query_analysis.get("suggested_queries", [])
-                    if suggested:
-                        st.markdown("---")
-                        st.markdown("**💡 Try asking:**")
-                        cols = st.columns(min(len(suggested), 3))
-                        for i, suggestion in enumerate(suggested[:3]):
-                            with cols[i]:
-                                st.button(
-                                    f"📝 {suggestion}", 
-                                    key=f"hist_suggest_{idx}_{i}",
-                                    on_click=set_suggested_query,
-                                    args=(suggestion,),
-                                    use_container_width=True
-                                )
-
                 # Only show documents if not a clarification response
                 if docs and not needs_clarification:
                     render_sources_carousel(docs)
@@ -160,60 +167,114 @@ def render_ai_search_page():
         # Generate response
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
-            with st.spinner("Thinking..."):
-                try:
-                    # Prepare state
-                    initial_state = cast(AgentState, {
-                        "messages": st.session_state.messages,
-                        "question": prompt,
-                        "documents": [],
-                        "generation": "",
-                        "query_analysis": None,
-                        "needs_clarification": False,
-                        "clarification_response": None
-                    })
+            thinking_placeholder = st.empty()
+            
+            # Show initial thinking state
+            with thinking_placeholder.container():
+                st.markdown("⏳ Thinking...")
+            
+            # Initialize thinking updates for this session
+            thinking_updates = []
+            
+            try:
+                # Prepare state
+                initial_state = cast(AgentState, {
+                    "messages": st.session_state.messages,
+                    "question": prompt,
+                    "documents": [],
+                    "generation": "",
+                    "query_analysis": None,
+                    "needs_clarification": False,
+                    "clarification_response": None,
+                    "thinking_updates": []
+                })
+                
+                # Collect all updates as we stream
+                thinking_updates = []
+                response = {}
+                
+                # Stream the graph execution to capture thinking updates in real-time
+                for chunk in st.session_state.ai_graph.stream(initial_state):
+                    # Each chunk is a dict with node name as key
+                    for node_name, node_state in chunk.items():
+                        # Collect thinking updates from each node
+                        if "thinking_updates" in node_state:
+                            new_updates = node_state.get("thinking_updates", [])
+                            # Only add updates we haven't seen yet
+                            if len(new_updates) > len(thinking_updates):
+                                thinking_updates = new_updates
+                                # Update display with latest thinking status
+                                with thinking_placeholder.container():
+                                    render_thinking_status_simple(thinking_updates)
                     
-                    # Run graph
-                    response = st.session_state.ai_graph.invoke(initial_state)
-                    
-                    answer = response.get("generation", "I couldn't generate an answer.")
-                    documents = response.get("documents", [])
-                    needs_clarification = response.get("needs_clarification", False)
-                    query_analysis = response.get("query_analysis", {})
-                    
-                    message_placeholder.markdown(answer)
-                    
-                    # Show suggested queries if clarification was needed
-                    if needs_clarification and query_analysis:
-                        suggested = query_analysis.get("suggested_queries", [])
-                        if suggested:
-                            st.markdown("---")
-                            st.markdown("**💡 Try asking:**")
-                            cols = st.columns(min(len(suggested), 3))
-                            for idx, suggestion in enumerate(suggested[:3]):
-                                with cols[idx]:
-                                    # Use a key that matches what will be in history (len(messages) is the index of this new message)
-                                    msg_idx = len(st.session_state.messages)
-                                    st.button(
-                                        f"📝 {suggestion}", 
-                                        key=f"hist_suggest_{msg_idx}_{idx}",
-                                        on_click=set_suggested_query,
-                                        args=(suggestion,),
-                                        use_container_width=True
-                                    )
-                    
-                    # Render sources for the new message (only if we got actual results)
-                    if documents and not needs_clarification:
-                        render_sources_carousel(documents)
-                    
-                    # Add AI message to history with documents
-                    st.session_state.messages.append(AIMessage(
-                        content=answer, 
-                        additional_kwargs={
-                            "documents": documents,
-                            "needs_clarification": needs_clarification,
-                            "query_analysis": query_analysis
-                        }
-                    ))
-                except Exception as e:
-                    st.error(f"An error occurred: {e}")
+                    response = chunk
+                
+                # Extract final response from last chunk
+                # The last chunk should contain the final state
+                if response:
+                    last_node_state = next(iter(response.values())) if response else {}
+                    answer = last_node_state.get("generation", "I couldn't generate an answer.")
+                    documents = last_node_state.get("documents", [])
+                    needs_clarification = last_node_state.get("needs_clarification", False)
+                    query_analysis = last_node_state.get("query_analysis", {})
+                else:
+                    answer = "I couldn't generate an answer."
+                    documents = []
+                    needs_clarification = False
+                    query_analysis = {}
+                
+                # Display answer
+                message_placeholder.markdown(answer)
+                
+                # Clear thinking display after we have the answer
+                thinking_placeholder.empty()
+                
+                # Force scroll to bottom
+                st.markdown("""
+                <script>
+                    setTimeout(() => {
+                        window.scrollTo(0, document.body.scrollHeight);
+                    }, 100);
+                </script>
+                """, unsafe_allow_html=True)
+                
+                # Show suggested queries if clarification was needed
+                if needs_clarification and query_analysis:
+                    suggested = query_analysis.get("suggested_queries", [])
+                    if suggested:
+                        st.markdown("---")
+                        st.markdown("**💡 Try asking:**")
+                        cols = st.columns(min(len(suggested), 3))
+                        for idx, suggestion in enumerate(suggested[:3]):
+                            with cols[idx]:
+                                # Use a key that matches what will be in history (len(messages) is the index of this new message)
+                                msg_idx = len(st.session_state.messages)
+                                st.button(
+                                    f"📝 {suggestion}", 
+                                    key=f"hist_suggest_{msg_idx}_{idx}",
+                                    on_click=set_suggested_query,
+                                    args=(suggestion,),
+                                    use_container_width=True
+                                )
+                
+                # Render sources for the new message (only if we got actual results)
+                if documents and not needs_clarification:
+                    render_sources_carousel(documents)
+                
+                # Add AI message to history with documents
+                st.session_state.messages.append(AIMessage(
+                    content=answer, 
+                    additional_kwargs={
+                        "documents": documents,
+                        "needs_clarification": needs_clarification,
+                        "query_analysis": query_analysis,
+                        "thinking_updates": thinking_updates
+                    }
+                ))
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
+                
+                # Still display thinking updates even if there was an error
+                if thinking_updates:
+                    with thinking_placeholder.container():
+                        render_thinking_status_simple(thinking_updates)

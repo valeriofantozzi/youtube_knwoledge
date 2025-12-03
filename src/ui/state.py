@@ -72,6 +72,10 @@ SESSION_STATE_DEFAULTS: Dict[str, Any] = {
     # UI state
     "sidebar_expanded": True,
     "show_advanced_options": False,
+    
+    # AI Search thinking state
+    "ai_search_thinking_updates": [],
+    "ai_search_last_query": None,
 }
 
 

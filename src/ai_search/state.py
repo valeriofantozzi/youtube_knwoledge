@@ -1,4 +1,4 @@
-from typing import TypedDict, List, Optional
+from typing import TypedDict, List, Optional, Any
 from langchain_core.messages import BaseMessage
 from src.retrieval.similarity_search import SearchResult
 
@@ -26,3 +26,5 @@ class AgentState(TypedDict):
     query_analysis: Optional[QueryAnalysis]
     needs_clarification: bool
     clarification_response: Optional[str]
+    # New field for thinking updates
+    thinking_updates: List[Any]
