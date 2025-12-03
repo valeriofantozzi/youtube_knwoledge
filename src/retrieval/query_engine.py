@@ -244,10 +244,11 @@ class QueryEngine:
         # Add filter parameters if present
         if filters:
             cache_params["filters"] = {
-                "video_id": filters.video_id,
+                "source_id": filters.source_id,
                 "date_start": filters.date_start,
                 "date_end": filters.date_end,
                 "title_keywords": filters.title_keywords,
+                "content_type": getattr(filters, 'content_type', None),
             }
         
         # Generate hash from JSON representation

@@ -107,8 +107,8 @@ class TestClusterManager:
         collection.get.return_value = {
             "ids": ["chunk_1", "chunk_2"],
             "metadatas": [
-                {"video_id": "video_1", "title": "Test"},
-                {"video_id": "video_2", "title": "Test2"}
+                {"source_id": "video_1", "title": "Test"},
+                {"source_id": "video_2", "title": "Test2"}
             ],
             "embeddings": None
         }
@@ -133,8 +133,8 @@ class TestClusterManager:
         # Mock get to return existing metadata
         cluster_manager.collection.get.return_value = {
             "metadatas": [
-                {"video_id": "video_1"},
-                {"video_id": "video_2"}
+                {"source_id": "video_1"},
+                {"source_id": "video_2"}
             ]
         }
         
@@ -163,8 +163,8 @@ class TestClusterManager:
         cluster_manager.collection.get.return_value = {
             "ids": ["chunk_1", "chunk_2"],
             "metadatas": [
-                {"cluster_id": 0, "video_id": "video_1"},
-                {"cluster_id": 0, "video_id": "video_2"}
+                {"cluster_id": 0, "source_id": "video_1"},
+                {"cluster_id": 0, "source_id": "video_2"}
             ],
             "embeddings": [
                 np.random.rand(1024).tolist(),

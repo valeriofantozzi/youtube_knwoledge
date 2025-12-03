@@ -146,7 +146,7 @@ class SchemaMigrator:
         migrated = old_metadata.copy()
         
         # Ensure all required fields exist
-        required_fields = ["video_id", "date", "title", "chunk_index", "chunk_id", "token_count", "filename"]
+        required_fields = ["source_id", "date", "title", "chunk_index", "chunk_id", "token_count", "filename"]
         for field in required_fields:
             if field not in migrated:
                 migrated[field] = "" if isinstance(migrated.get(field, ""), str) else 0

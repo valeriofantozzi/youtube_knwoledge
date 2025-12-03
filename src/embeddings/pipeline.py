@@ -13,7 +13,7 @@ import pickle
 from .model_loader import ModelLoader, get_model_loader
 from .embedder import Embedder
 from .batch_processor import BatchProcessor
-from ..preprocessing.pipeline import ProcessedVideo
+from ..preprocessing.pipeline import ProcessedDocument
 from ..utils.logger import get_default_logger
 from ..utils.config import get_config
 
@@ -64,36 +64,36 @@ class EmbeddingPipeline:
     
     def generate_embeddings(
         self,
-        processed_video: ProcessedVideo,
+        processed_document: ProcessedDocument,
         show_progress: bool = True
     ) -> Tuple[np.ndarray, List[Dict]]:
         """
-        Generate embeddings for a processed video.
+        Generate embeddings for a processed document.
         
         Args:
-            processed_video: ProcessedVideo object with chunks
+            processed_document: ProcessedDocument object with chunks
             show_progress: Show progress bar
         
         Returns:
             Tuple of (embeddings array, metadata list)
         """
-        if not processed_video.chunks:
+        if not processed_document.chunks:
             self.logger.warning("No chunks to process")
             return np.array([]), []
         
         self.logger.info(
-            f"Generating embeddings for {len(processed_video.chunks)} chunks "
-            f"from {processed_video.metadata.filename}"
+            f"Generating embeddings for {len(processed_document.chunks)} chunks "
+            f"from {processed_document.metadata.filename}"
         )
         
         # Generate embeddings
         embeddings, metadata = self.batch_processor.process_chunks(
-            processed_video.chunks,
+            processed_document.chunks,
             show_progress=show_progress
         )
         
         # Validate embeddings
-        self._validate_embeddings(embeddings, len(processed_video.chunks))
+        self._validate_embeddings(embeddings, len(processed_document.chunks))
         
         self.logger.info(
             f"Generated {len(embeddings)} embeddings "
@@ -107,14 +107,14 @@ class EmbeddingPipeline:
     
     def generate_embeddings_batch(
         self,
-        processed_videos: List[ProcessedVideo],
+        processed_documents: List[ProcessedDocument],
         show_progress: bool = True
     ) -> List[Tuple[np.ndarray, List[Dict]]]:
         """
-        Generate embeddings for multiple processed videos.
+        Generate embeddings for multiple processed documents.
         
         Args:
-            processed_videos: List of ProcessedVideo objects
+            processed_documents: List of ProcessedDocument objects
             show_progress: Show progress bar
         
         Returns:
@@ -122,14 +122,14 @@ class EmbeddingPipeline:
         """
         results = []
         
-        for i, processed_video in enumerate(processed_videos):
+        for i, processed_document in enumerate(processed_documents):
             self.logger.info(
-                f"Processing video {i+1}/{len(processed_videos)}: "
-                f"{processed_video.metadata.filename}"
+                f"Processing document {i+1}/{len(processed_documents)}: "
+                f"{processed_document.metadata.filename}"
             )
             
             embeddings, metadata = self.generate_embeddings(
-                processed_video,
+                processed_document,
                 show_progress=show_progress
             )
             
@@ -248,7 +248,7 @@ class EmbeddingPipeline:
     
     def process_and_save(
         self,
-        processed_video: ProcessedVideo,
+        processed_document: ProcessedDocument,
         output_dir: Path,
         save_format: str = "numpy",
         show_progress: bool = True
@@ -257,7 +257,7 @@ class EmbeddingPipeline:
         Process video and save embeddings.
         
         Args:
-            processed_video: ProcessedVideo object
+            processed_document: ProcessedDocument object
             output_dir: Output directory
             save_format: Format to save ("numpy" or "json")
             show_progress: Show progress bar
@@ -267,19 +267,19 @@ class EmbeddingPipeline:
         """
         # Generate embeddings
         embeddings, metadata = self.generate_embeddings(
-            processed_video,
+            processed_document,
             show_progress=show_progress
         )
         
         # Save embeddings
-        output_file = output_dir / f"{processed_video.metadata.video_id}_embeddings.{save_format if save_format == 'json' else 'npz'}"
+        output_file = output_dir / f"{processed_document.metadata.source_id}_embeddings.{save_format if save_format == 'json' else 'npz'}"
         self.save_embeddings(embeddings, metadata, output_file, save_format)
         
         return output_file
     
     def generate_embeddings_with_checkpointing(
         self,
-        processed_video: ProcessedVideo,
+        processed_document: ProcessedDocument,
         checkpoint_dir: Optional[Path] = None,
         checkpoint_interval: Optional[int] = None,
         show_progress: bool = True,
@@ -289,7 +289,7 @@ class EmbeddingPipeline:
         Generate embeddings with checkpointing support.
 
         Args:
-            processed_video: ProcessedVideo object with chunks
+            processed_document: ProcessedDocument object with chunks
             checkpoint_dir: Directory to save checkpoints (default: data/checkpoints)
             checkpoint_interval: Save checkpoint every N chunks (default from config)
             show_progress: Show progress bar
@@ -302,7 +302,7 @@ class EmbeddingPipeline:
         checkpoint_interval = checkpoint_interval or self.config.CHECKPOINT_INTERVAL
         
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        checkpoint_file = checkpoint_dir / f"{processed_video.metadata.video_id}_checkpoint.pkl"
+        checkpoint_file = checkpoint_dir / f"{processed_document.metadata.source_id}_checkpoint.pkl"
         
         # Try to resume from checkpoint
         start_idx = 0
@@ -316,23 +316,23 @@ class EmbeddingPipeline:
                 checkpoint_processed_count = checkpoint_data['processed_count']
                 checkpoint_embeddings = checkpoint_data['embeddings']
                 checkpoint_metadata = checkpoint_data['metadata']
-                checkpoint_video_id = checkpoint_data.get('video_id', '')
+                checkpoint_source_id = checkpoint_data.get('source_id', '')
                 
-                # Validate checkpoint belongs to this video
-                if checkpoint_video_id != processed_video.metadata.video_id:
+                # Validate checkpoint belongs to this source
+                if checkpoint_source_id != processed_document.metadata.source_id:
                     self.logger.warning(
-                        f"Checkpoint belongs to different video (checkpoint: {checkpoint_video_id}, "
-                        f"current: {processed_video.metadata.video_id}). Starting from beginning."
+                        f"Checkpoint belongs to different source (checkpoint: {checkpoint_source_id}, "
+                        f"current: {processed_document.metadata.source_id}). Starting from beginning."
                     )
                     checkpoint_file.unlink()
                     start_idx = 0
                     accumulated_embeddings = []
                     accumulated_metadata = []
                 # Validate checkpoint data consistency (must match current chunk count)
-                elif len(checkpoint_embeddings) != len(processed_video.chunks):
+                elif len(checkpoint_embeddings) != len(processed_document.chunks):
                     self.logger.warning(
                         f"Checkpoint chunk count mismatch (checkpoint: {len(checkpoint_embeddings)}, "
-                        f"current: {len(processed_video.chunks)}). This suggests the SRT file or chunking "
+                        f"current: {len(processed_document.chunks)}). This suggests the SRT file or chunking "
                         f"logic changed. Discarding checkpoint and starting from beginning."
                     )
                     checkpoint_file.unlink()
@@ -340,10 +340,10 @@ class EmbeddingPipeline:
                     accumulated_embeddings = []
                     accumulated_metadata = []
                 # Validate checkpoint processed count doesn't exceed current chunk count
-                elif checkpoint_processed_count > len(processed_video.chunks):
+                elif checkpoint_processed_count > len(processed_document.chunks):
                     self.logger.warning(
                         f"Checkpoint processed_count ({checkpoint_processed_count}) exceeds "
-                        f"current chunk count ({len(processed_video.chunks)}). Starting from beginning."
+                        f"current chunk count ({len(processed_document.chunks)}). Starting from beginning."
                     )
                     checkpoint_file.unlink()
                     start_idx = 0
@@ -379,12 +379,12 @@ class EmbeddingPipeline:
                             start_idx = checkpoint_processed_count
                             accumulated_embeddings = checkpoint_embeddings
                             accumulated_metadata = checkpoint_metadata
-                            self.logger.info(f"Resuming from chunk {start_idx}/{len(processed_video.chunks)}")
+                            self.logger.info(f"Resuming from chunk {start_idx}/{len(processed_document.chunks)}")
                     else:
                         start_idx = checkpoint_processed_count
                         accumulated_embeddings = checkpoint_embeddings
                         accumulated_metadata = checkpoint_metadata
-                        self.logger.info(f"Resuming from chunk {start_idx}/{len(processed_video.chunks)}")
+                        self.logger.info(f"Resuming from chunk {start_idx}/{len(processed_document.chunks)}")
                 # Validate internal checkpoint consistency (processed_count vs embeddings count)
                 elif len(checkpoint_embeddings) != checkpoint_processed_count:
                     self.logger.warning(
@@ -400,7 +400,7 @@ class EmbeddingPipeline:
                     start_idx = checkpoint_processed_count
                     accumulated_embeddings = checkpoint_embeddings
                     accumulated_metadata = checkpoint_metadata
-                    self.logger.info(f"Resuming from chunk {start_idx}/{len(processed_video.chunks)}")
+                    self.logger.info(f"Resuming from chunk {start_idx}/{len(processed_document.chunks)}")
             except Exception as e:
                 self.logger.warning(f"Failed to load checkpoint: {e}. Starting from beginning.")
                 if checkpoint_file.exists():
@@ -410,8 +410,8 @@ class EmbeddingPipeline:
                 accumulated_metadata = []
         
         # Process remaining chunks
-        if start_idx < len(processed_video.chunks):
-            remaining_chunks = processed_video.chunks[start_idx:]
+        if start_idx < len(processed_document.chunks):
+            remaining_chunks = processed_document.chunks[start_idx:]
             remaining_embeddings, remaining_metadata = self.batch_processor.process_chunks(
                 remaining_chunks,
                 show_progress=show_progress
@@ -434,9 +434,9 @@ class EmbeddingPipeline:
             metadata = accumulated_metadata
         
         # Validate embeddings before saving final checkpoint
-        if len(embeddings) != len(processed_video.chunks):
+        if len(embeddings) != len(processed_document.chunks):
             self.logger.error(
-                f"Embedding count mismatch before validation: expected {len(processed_video.chunks)}, "
+                f"Embedding count mismatch before validation: expected {len(processed_document.chunks)}, "
                 f"got {len(embeddings)}. start_idx={start_idx}, accumulated={len(accumulated_embeddings) if accumulated_embeddings else 0}, "
                 f"remaining={len(remaining_embeddings) if 'remaining_embeddings' in locals() else 'N/A'}"
             )
@@ -445,17 +445,17 @@ class EmbeddingPipeline:
                 checkpoint_file.unlink()
                 self.logger.info("Cleared corrupted checkpoint, retrying from beginning")
             raise ValueError(
-                f"Embedding count mismatch: expected {len(processed_video.chunks)}, "
+                f"Embedding count mismatch: expected {len(processed_document.chunks)}, "
                 f"got {len(embeddings)}"
             )
         
         # Final checkpoint
         if embeddings.size > 0:
             checkpoint_data = {
-                'processed_count': len(processed_video.chunks),
+                'processed_count': len(processed_document.chunks),
                 'embeddings': embeddings.tolist() if isinstance(embeddings, np.ndarray) else embeddings,
                 'metadata': metadata,
-                'video_id': processed_video.metadata.video_id,
+                'source_id': processed_document.metadata.source_id,
                 'model_name': self.model_loader.get_actual_model_name(),
                 'embedding_dimension': self.embedder.get_embedding_dimension()
             }
@@ -463,7 +463,7 @@ class EmbeddingPipeline:
             self.logger.info("Saved final checkpoint")
         
         # Validate embeddings
-        self._validate_embeddings(embeddings, len(processed_video.chunks))
+        self._validate_embeddings(embeddings, len(processed_document.chunks))
 
         # Get actual model name (after any fallback)
         actual_model_name = self.model_loader.get_actual_model_name()
@@ -483,18 +483,18 @@ class EmbeddingPipeline:
         with open(checkpoint_file, 'rb') as f:
             return pickle.load(f)
     
-    def clear_checkpoint(self, video_id: str, checkpoint_dir: Optional[Path] = None) -> None:
+    def clear_checkpoint(self, source_id: str, checkpoint_dir: Optional[Path] = None) -> None:
         """
-        Clear checkpoint for a video.
+        Clear checkpoint for a source.
         
         Args:
-            video_id: Video ID
+            source_id: Source ID
             checkpoint_dir: Checkpoint directory (default from config)
         """
         checkpoint_dir = checkpoint_dir or Path(self.config.get("CHECKPOINT_DIR", "./data/checkpoints"))
-        checkpoint_file = checkpoint_dir / f"{video_id}_checkpoint.pkl"
+        checkpoint_file = checkpoint_dir / f"{source_id}_checkpoint.pkl"
         
         if checkpoint_file.exists():
             checkpoint_file.unlink()
-            self.logger.info(f"Cleared checkpoint for {video_id}")
+            self.logger.info(f"Cleared checkpoint for {source_id}")
 

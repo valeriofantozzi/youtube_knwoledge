@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Main script for processing subtitle files.
+Main script for processing document files.
 
-Processes all SRT files, generates embeddings, and indexes them in the vector store.
+Processes document files (SRT, TXT, MD), generates embeddings, and indexes them in the vector store.
 """
 
 import argparse
 import sys
 import glob
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Set
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn, TaskID
 from rich.table import Table
@@ -18,20 +18,35 @@ from rich.panel import Panel
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.preprocessing.pipeline import PreprocessingPipeline, ProcessedVideo
+from src.preprocessing.pipeline import PreprocessingPipeline, ProcessedDocument
 from src.embeddings.pipeline import EmbeddingPipeline
 from src.vector_store.pipeline import VectorStorePipeline
 from src.utils.logger import get_default_logger
 from src.utils.config import get_config
 
 
-def find_srt_files(input_dir: Path, max_files: Optional[int] = None) -> List[Path]:
-    """Find all SRT files in the input directory."""
-    srt_files = list(input_dir.rglob("*.srt"))
-    srt_files = sorted(srt_files)
+# Supported file extensions
+SUPPORTED_EXTENSIONS = {'.srt', '.sub', '.txt', '.text', '.md', '.markdown', '.mdown'}
+
+
+def find_document_files(input_dir: Path, max_files: Optional[int] = None, extensions: Optional[Set[str]] = None) -> List[Path]:
+    """Find all supported document files in the input directory."""
+    if extensions is None:
+        extensions = SUPPORTED_EXTENSIONS
+    
+    doc_files = []
+    for ext in extensions:
+        doc_files.extend(input_dir.rglob(f"*{ext}"))
+        doc_files.extend(input_dir.rglob(f"*{ext.upper()}"))
+    
+    doc_files = sorted(set(doc_files))
     if max_files is not None:
-        srt_files = srt_files[:max_files]
-    return srt_files
+        doc_files = doc_files[:max_files]
+    return doc_files
+
+
+# Backward compatibility alias
+find_srt_files = find_document_files
 
 
 def process_pipeline(
@@ -42,19 +57,22 @@ def process_pipeline(
     batch_size: Optional[int] = None,
     show_progress: bool = True,
     model_name: Optional[str] = None,
-    max_files: Optional[int] = None
+    max_files: Optional[int] = None,
+    extensions: Optional[Set[str]] = None
 ) -> dict:
     """
     Run the complete pipeline: preprocessing -> embeddings -> indexing.
 
     Args:
-        input_dir: Directory containing SRT files
-        skip_processed: Skip videos that are already indexed
+        input_dir: Directory containing document files
+        skip_processed: Skip documents that are already indexed
         parallel_preprocessing: Use parallel processing for preprocessing
         max_workers: Max workers for parallel processing
         batch_size: Batch size for embedding generation
         show_progress: Show progress bars
         model_name: Embedding model name (None uses config default)
+        max_files: Maximum number of files to process
+        extensions: Set of file extensions to process (None = all supported)
 
     Returns:
         Dictionary with processing statistics
@@ -87,12 +105,13 @@ def process_pipeline(
     )
     vector_store_pipeline = VectorStorePipeline(model_name=model_name)
     
-    # Find SRT files
-    console.print(f"[bold blue]Scanning for SRT files in {input_dir}...[/bold blue]")
-    srt_files = find_srt_files(input_dir, max_files)
+    # Find document files
+    ext_str = ", ".join(extensions) if extensions else "all supported types"
+    console.print(f"[bold blue]Scanning for document files ({ext_str}) in {input_dir}...[/bold blue]")
+    doc_files = find_document_files(input_dir, max_files, extensions)
     
-    if not srt_files:
-        console.print("[bold red]No SRT files found![/bold red]")
+    if not doc_files:
+        console.print("[bold red]No document files found![/bold red]")
         return {
             "total_files": 0,
             "processed": 0,
@@ -102,53 +121,60 @@ def process_pipeline(
             "total_indexed": 0
         }
     
-    console.print(f"[green]Found {len(srt_files)} SRT files[/green]")
+    console.print(f"[green]Found {len(doc_files)} document files[/green]")
     
-    # Check for already processed videos if skip_processed is True
-    processed_video_ids = set()
+    # Check for already processed documents if skip_processed is True
+    processed_source_ids = set()
     if skip_processed:
         try:
             stats = vector_store_pipeline.get_index_statistics()
-            # Get all video IDs from the index
+            # Get all source IDs from the index
             collection = vector_store_pipeline.chroma_manager.get_or_create_collection()
-            # Sample some documents to check video IDs
+            # Sample some documents to check source IDs
             sample = collection.get(limit=1000)
             if sample.get("metadatas"):
                 for metadata in sample["metadatas"]:
-                    if metadata and "video_id" in metadata:
-                        processed_video_ids.add(metadata["video_id"])
-            console.print(f"[yellow]Found {len(processed_video_ids)} already processed videos[/yellow]")
+                    if metadata:
+                        # Support both source_id and legacy video_id
+                        sid = metadata.get("source_id") or metadata.get("video_id")
+                        if sid:
+                            processed_source_ids.add(sid)
+            console.print(f"[yellow]Found {len(processed_source_ids)} already processed documents[/yellow]")
         except Exception as e:
-            logger.warning(f"Could not check for processed videos: {e}")
+            logger.warning(f"Could not check for processed documents: {e}")
     
     # Filter out already processed files
     files_to_process = []
     skipped_count = 0
     
-    if skip_processed and processed_video_ids:
-        for srt_file in srt_files:
-            # Extract video ID from filename (simple heuristic)
-            filename = srt_file.stem
-            # Try to find video ID in filename (11 character alphanumeric)
-            video_id = None
+    if skip_processed and processed_source_ids:
+        for doc_file in doc_files:
+            # Extract source ID from filename
+            filename = doc_file.stem
+            # Try to find source ID in filename (11 character alphanumeric for YouTube videos)
+            source_id = None
             for i in range(len(filename) - 10):
                 candidate = filename[i:i+11]
                 if candidate.isalnum() and len(candidate) == 11:
-                    video_id = candidate
+                    source_id = candidate
                     break
             
-            if video_id and video_id in processed_video_ids:
+            # If no YouTube-style ID found, use the full filename stem as source ID
+            if source_id is None:
+                source_id = filename
+            
+            if source_id in processed_source_ids:
                 skipped_count += 1
                 continue
             
-            files_to_process.append(srt_file)
+            files_to_process.append(doc_file)
     else:
-        files_to_process = srt_files
+        files_to_process = doc_files
     
     if not files_to_process:
         console.print("[yellow]All files are already processed![/yellow]")
         return {
-            "total_files": len(srt_files),
+            "total_files": len(doc_files),
             "processed": 0,
             "skipped": skipped_count,
             "failed": 0,
@@ -162,7 +188,7 @@ def process_pipeline(
     
     # Statistics
     stats = {
-        "total_files": len(srt_files),
+        "total_files": len(doc_files),
         "processed": 0,
         "skipped": skipped_count,
         "failed": 0,
@@ -185,11 +211,11 @@ def process_pipeline(
         
         # Phase 1: Preprocessing
         task_preprocess = progress.add_task(
-            "[cyan]Preprocessing SRT files...",
+            "[cyan]Preprocessing document files...",
             total=len(files_to_process)
         )
         
-        processed_videos = []
+        processed_documents = []
         for i in range(0, len(files_to_process), batch_size_processing):
             batch_files = files_to_process[i:i+batch_size_processing]
             
@@ -202,7 +228,7 @@ def process_pipeline(
                     parallel=parallel_preprocessing,
                     max_workers=workers
                 )
-                processed_videos.extend(batch_processed)
+                processed_documents.extend(batch_processed)
                 progress.update(task_preprocess, advance=len(batch_files))
             except Exception as e:
                 logger.error(f"Error preprocessing batch: {e}", exc_info=True)
@@ -210,28 +236,28 @@ def process_pipeline(
                 progress.update(task_preprocess, advance=len(batch_files))
         
         # Filter out None results
-        processed_videos = [v for v in processed_videos if v is not None]
-        stats["processed"] = len(processed_videos)
-        stats["total_chunks"] = sum(len(v.chunks) for v in processed_videos)
+        processed_documents = [d for d in processed_documents if d is not None]
+        stats["processed"] = len(processed_documents)
+        stats["total_chunks"] = sum(len(d.chunks) for d in processed_documents)
         
-        if not processed_videos:
-            console.print("[bold red]No videos were successfully processed![/bold red]")
+        if not processed_documents:
+            console.print("[bold red]No documents were successfully processed![/bold red]")
             return stats
         
-        console.print(f"[green]✓ Preprocessed {len(processed_videos)} videos, {stats['total_chunks']} total chunks[/green]")
+        console.print(f"[green]✓ Preprocessed {len(processed_documents)} documents, {stats['total_chunks']} total chunks[/green]")
         
         # Phase 2: Embedding Generation
         task_embeddings = progress.add_task(
             "[cyan]Generating embeddings...",
-            total=len(processed_videos)
+            total=len(processed_documents)
         )
         
         embeddings_list = []
         actual_model_names = []
-        for processed_video in processed_videos:
+        for processed_document in processed_documents:
             try:
                 embeddings, metadata, actual_model_name = embedding_pipeline.generate_embeddings_with_checkpointing(
-                    processed_video,
+                    processed_document,
                     show_progress=False  # We have our own progress bar
                 )
                 embeddings_list.append(embeddings)
@@ -239,48 +265,48 @@ def process_pipeline(
                 progress.update(task_embeddings, advance=1)
             except Exception as e:
                 logger.error(
-                    f"Error generating embeddings for {processed_video.metadata.filename}: {e}",
+                    f"Error generating embeddings for {processed_document.metadata.filename}: {e}",
                     exc_info=True
                 )
                 stats["failed"] += 1
-                stats["errors"].append(f"Embedding generation failed for {processed_video.metadata.filename}: {str(e)}")
+                stats["errors"].append(f"Embedding generation failed for {processed_document.metadata.filename}: {str(e)}")
                 # Add None to keep alignment
                 embeddings_list.append(None)
                 progress.update(task_embeddings, advance=1)
         
         # Filter out None embeddings
-        valid_pairs = [(v, e) for v, e in zip(processed_videos, embeddings_list) if e is not None]
-        processed_videos = [v for v, e in valid_pairs]
-        embeddings_list = [e for v, e in valid_pairs]
+        valid_pairs = [(d, e) for d, e in zip(processed_documents, embeddings_list) if e is not None]
+        processed_documents = [d for d, e in valid_pairs]
+        embeddings_list = [e for d, e in valid_pairs]
         
-        console.print(f"[green]✓ Generated embeddings for {len(processed_videos)} videos[/green]")
+        console.print(f"[green]✓ Generated embeddings for {len(processed_documents)} documents[/green]")
         
         # Phase 3: Indexing
         task_indexing = progress.add_task(
             "[cyan]Indexing in vector store...",
-            total=len(processed_videos)
+            total=len(processed_documents)
         )
         
         indexed_counts = {}
-        for processed_video, embeddings, actual_model_name in zip(processed_videos, embeddings_list, actual_model_names):
+        for processed_document, embeddings, actual_model_name in zip(processed_documents, embeddings_list, actual_model_names):
             try:
-                indexed_count = vector_store_pipeline.index_processed_video(
-                    processed_video,
+                indexed_count = vector_store_pipeline.index_processed_document(
+                    processed_document,
                     embeddings,
                     skip_duplicates=True,
                     show_progress=False,
                     model_name=actual_model_name
                 )
-                indexed_counts[processed_video.metadata.video_id] = indexed_count
+                indexed_counts[processed_document.metadata.source_id] = indexed_count
                 stats["total_indexed"] += indexed_count
                 progress.update(task_indexing, advance=1)
             except Exception as e:
                 logger.error(
-                    f"Error indexing {processed_video.metadata.filename}: {e}",
+                    f"Error indexing {processed_document.metadata.filename}: {e}",
                     exc_info=True
                 )
                 stats["failed"] += 1
-                stats["errors"].append(f"Indexing failed for {processed_video.metadata.filename}: {str(e)}")
+                stats["errors"].append(f"Indexing failed for {processed_document.metadata.filename}: {str(e)}")
                 progress.update(task_indexing, advance=1)
         
         console.print(f"[green]✓ Indexed {stats['total_indexed']} chunks[/green]")
@@ -294,7 +320,7 @@ def print_summary(stats: dict, console: Console):
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="green", justify="right")
     
-    table.add_row("Total SRT files", str(stats["total_files"]))
+    table.add_row("Total document files", str(stats["total_files"]))
     table.add_row("Successfully processed", str(stats["processed"]))
     table.add_row("Skipped (already processed)", str(stats["skipped"]))
     table.add_row("Failed", str(stats["failed"]))
@@ -315,12 +341,12 @@ def print_summary(stats: dict, console: Console):
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Process subtitle files and index them in vector store"
+        description="Process document files and index them in vector store"
     )
     parser.add_argument(
         "input_dir",
         type=Path,
-        help="Directory containing SRT files"
+        help="Directory containing document files (SRT, TXT, MD)"
     )
     parser.add_argument(
         "--no-skip",

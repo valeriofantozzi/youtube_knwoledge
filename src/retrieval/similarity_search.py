@@ -38,11 +38,14 @@ class SearchResult:
 
 @dataclass
 class SearchFilters:
-    """Search filters for narrowing down results."""
-    video_id: Optional[str] = None
+    """
+    Search filters for narrowing down results.
+    """
+    source_id: Optional[str] = None
     date_start: Optional[str] = None  # Format: YYYY/MM/DD
     date_end: Optional[str] = None    # Format: YYYY/MM/DD
     title_keywords: Optional[List[str]] = None
+    content_type: Optional[str] = None  # Filter by document type (srt, text, markdown, etc.)
     
     def to_chromadb_where(self) -> Optional[Dict[str, Any]]:
         """
@@ -53,14 +56,17 @@ class SearchFilters:
         """
         conditions = []
         
-        if self.video_id:
-            conditions.append({"video_id": {"$eq": self.video_id}})
+        if self.source_id:
+            conditions.append({"source_id": {"$eq": self.source_id}})
         
         if self.date_start:
             conditions.append({"date": {"$gte": self.date_start}})
         
         if self.date_end:
             conditions.append({"date": {"$lte": self.date_end}})
+        
+        if self.content_type:
+            conditions.append({"content_type": {"$eq": self.content_type}})
         
         if self.title_keywords:
             # ChromaDB doesn't support text search directly, so we'll filter post-query
@@ -244,14 +250,16 @@ class SimilaritySearch:
                 except Exception as e:
                     self.logger.warning(f"Failed to parse metadata for result {doc_id}: {e}")
                     # Create minimal metadata
+                    source_id = metadata.get('source_id', 'unknown')
                     chunk_metadata = ChunkMetadata(
-                        video_id=metadata.get('video_id', 'unknown'),
+                        source_id=source_id,
                         date=metadata.get('date', '0000/00/00'),
                         title=metadata.get('title', ''),
                         chunk_index=int(metadata.get('chunk_index', 0)),
                         chunk_id=metadata.get('chunk_id', doc_id),
                         token_count=int(metadata.get('token_count', 0)),
-                        filename=metadata.get('filename', '')
+                        filename=metadata.get('filename', ''),
+                        content_type=metadata.get('content_type', 'srt')
                     )
             
             search_result = SearchResult(
@@ -260,13 +268,14 @@ class SimilaritySearch:
                 similarity_score=similarity_score,
                 distance=distance,
                 metadata=chunk_metadata or ChunkMetadata(
-                    video_id='unknown',
+                    source_id='unknown',
                     date='0000/00/00',
                     title='',
                     chunk_index=0,
                     chunk_id=doc_id,
                     token_count=0,
-                    filename=''
+                    filename='',
+                    content_type='unknown'
                 )
             )
             

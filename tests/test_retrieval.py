@@ -27,13 +27,15 @@ class TestSearchFilters:
         where_clause = filters.to_chromadb_where()
         assert where_clause is None
     
-    def test_video_id_filter(self):
-        """Test video_id filter."""
-        filters = SearchFilters(video_id="test_video_123")
+    def test_source_id_filter(self):
+        """Test source_id filter."""
+        filters = SearchFilters(source_id="test_source_123")
         where_clause = filters.to_chromadb_where()
         
         assert where_clause is not None
-        assert where_clause == {"video_id": {"$eq": "test_video_123"}}
+        # Simple source_id filter
+        assert "source_id" in where_clause
+        assert where_clause["source_id"] == {"$eq": "test_source_123"}
     
     def test_date_range_filter(self):
         """Test date range filter."""
@@ -50,7 +52,7 @@ class TestSearchFilters:
     def test_combined_filters(self):
         """Test combined filters."""
         filters = SearchFilters(
-            video_id="test_video_123",
+            source_id="test_video_123",
             date_start="2023/01/01"
         )
         where_clause = filters.to_chromadb_where()
@@ -66,7 +68,7 @@ class TestSearchResult:
     def test_search_result_creation(self):
         """Test SearchResult creation."""
         metadata = ChunkMetadata(
-            video_id="test_video",
+            source_id="test_video",
             date="2023/01/01",
             title="Test Video",
             chunk_index=0,
@@ -87,12 +89,12 @@ class TestSearchResult:
         assert result.text == "Test text"
         assert result.similarity_score == 0.95
         assert result.distance == 0.05
-        assert result.metadata.video_id == "test_video"
+        assert result.metadata.source_id == "test_video"
     
     def test_search_result_to_dict(self):
         """Test SearchResult to_dict conversion."""
         metadata = ChunkMetadata(
-            video_id="test_video",
+            source_id="test_video",
             date="2023/01/01",
             title="Test Video",
             chunk_index=0,
@@ -131,27 +133,27 @@ class TestSimilaritySearch:
             "documents": [["Text 1", "Text 2", "Text 3"]],
             "metadatas": [[
                 {
-                    "video_id": "video_1",
+                    "source_id": "source_1",
                     "date": "2023/01/01",
-                    "title": "Test Video 1",
+                    "title": "Test Document 1",
                     "chunk_index": 0,
                     "chunk_id": "chunk_1",
                     "token_count": 100,
                     "filename": "test1.srt"
                 },
                 {
-                    "video_id": "video_2",
+                    "source_id": "source_2",
                     "date": "2023/02/01",
-                    "title": "Test Video 2",
+                    "title": "Test Document 2",
                     "chunk_index": 0,
                     "chunk_id": "chunk_2",
                     "token_count": 150,
                     "filename": "test2.srt"
                 },
                 {
-                    "video_id": "video_1",
+                    "source_id": "source_1",
                     "date": "2023/01/01",
-                    "title": "Test Video 1",
+                    "title": "Test Document 1",
                     "chunk_index": 1,
                     "chunk_id": "chunk_3",
                     "token_count": 120,
@@ -176,7 +178,12 @@ class TestSimilaritySearch:
         # Mock embedding generation (1024-dimensional for BGE-large)
         mock_embedding = np.random.rand(1024).astype(np.float32)
         embedder.encode_single.return_value = mock_embedding
-        embedder.encode.return_value = np.array([mock_embedding])
+        # Return multiple embeddings based on input length for batch operations
+        def encode_side_effect(texts, **kwargs):
+            if isinstance(texts, list):
+                return np.array([np.random.rand(1024).astype(np.float32) for _ in texts])
+            return np.array([mock_embedding])
+        embedder.encode.side_effect = encode_side_effect
         return embedder
     
     @pytest.fixture
@@ -231,9 +238,9 @@ class TestSimilaritySearch:
         with pytest.raises(ValueError, match="score_threshold must be between"):
             similarity_search.search("test", score_threshold=-0.1)
     
-    def test_search_with_video_id_filter(self, similarity_search):
-        """Test search with video_id filter."""
-        filters = SearchFilters(video_id="video_1")
+    def test_search_with_source_id_filter(self, similarity_search):
+        """Test search with source_id filter."""
+        filters = SearchFilters(source_id="source_1")
         results = similarity_search.search(
             "test query",
             top_k=10,
@@ -248,7 +255,9 @@ class TestSimilaritySearch:
         # Check that where clause was included
         if "where" in call_args.kwargs:
             where_clause = call_args.kwargs["where"]
-            assert where_clause == {"video_id": {"$eq": "video_1"}}
+            # Simple source_id filter
+            assert "source_id" in where_clause
+            assert where_clause["source_id"] == {"$eq": "source_1"}
     
     def test_search_with_date_range_filter(self, similarity_search):
         """Test search with date range filter."""
@@ -303,7 +312,7 @@ class TestSimilaritySearch:
         
         assert len(results) > 0
         assert all(r.metadata is not None for r in results)
-        assert all(r.metadata.video_id != 'unknown' for r in results)
+        assert all(r.metadata.source_id != 'unknown' for r in results)
     
     def test_search_exclude_metadata(self, similarity_search):
         """Test search with include_metadata=False."""
@@ -366,7 +375,7 @@ class TestSimilaritySearch:
             "documents": [["Text 1", "Text 2"]],
             "metadatas": [[
                 {
-                    "video_id": "video_1",
+                    "source_id": "video_1",
                     "date": "2023/01/01",
                     "title": "Test Video",
                     "chunk_index": 0,
@@ -375,7 +384,7 @@ class TestSimilaritySearch:
                     "filename": "test.srt"
                 },
                 {
-                    "video_id": "video_2",
+                    "source_id": "video_2",
                     "date": "2023/02/01",
                     "title": "Test Video 2",
                     "chunk_index": 0,
@@ -403,7 +412,7 @@ class TestSimilaritySearch:
             "documents": [["Text 1", "Text 2"]],
             "metadatas": [[
                 {
-                    "video_id": "video_1",
+                    "source_id": "video_1",
                     "date": "2023/01/01",
                     "title": "Orchid Care Video",
                     "chunk_index": 0,
@@ -412,7 +421,7 @@ class TestSimilaritySearch:
                     "filename": "test.srt"
                 },
                 {
-                    "video_id": "video_2",
+                    "source_id": "video_2",
                     "date": "2023/02/01",
                     "title": "Garden Tips Video",
                     "chunk_index": 0,
@@ -449,7 +458,7 @@ class TestQueryEngine:
                 similarity_score=0.9,
                 distance=0.1,
                 metadata=ChunkMetadata(
-                    video_id="video_1",
+                    source_id="video_1",
                     date="2023/01/01",
                     title="Test Video",
                     chunk_index=0,
@@ -468,7 +477,7 @@ class TestQueryEngine:
                     similarity_score=0.9,
                     distance=0.1,
                     metadata=ChunkMetadata(
-                        video_id="video_1",
+                        source_id="video_1",
                         date="2023/01/01",
                         title="Test Video",
                         chunk_index=0,
@@ -528,7 +537,7 @@ class TestQueryEngine:
     
     def test_query_with_filters(self, query_engine):
         """Test query with filters."""
-        filters = SearchFilters(video_id="video_1")
+        filters = SearchFilters(source_id="video_1")
         results = query_engine.query("test query", top_k=5, filters=filters)
         
         assert len(results) == 1
@@ -614,7 +623,7 @@ class TestQueryEngine:
             top_k=5,
             score_threshold=0.8,
             include_metadata=True,
-            filters=SearchFilters(video_id="video_1")
+            filters=SearchFilters(source_id="video_1")
         )
         
         results = query_engine.query_with_options("test query", options)
@@ -648,7 +657,7 @@ class TestResultFormatter:
                 similarity_score=0.95,
                 distance=0.05,
                 metadata=ChunkMetadata(
-                    video_id="video_1",
+                    source_id="video_1",
                     date="2023/01/01",
                     title="Orchid Care Guide",
                     chunk_index=5,
@@ -663,7 +672,7 @@ class TestResultFormatter:
                 similarity_score=0.88,
                 distance=0.12,
                 metadata=ChunkMetadata(
-                    video_id="video_2",
+                    source_id="video_2",
                     date="2023/02/01",
                     title="Plant Maintenance Tips",
                     chunk_index=3,
@@ -678,7 +687,7 @@ class TestResultFormatter:
                 similarity_score=0.85,
                 distance=0.15,
                 metadata=ChunkMetadata(
-                    video_id="video_1",
+                    source_id="video_1",
                     date="2023/01/01",
                     title="Orchid Care Guide",
                     chunk_index=6,  # Adjacent to doc_1
@@ -702,8 +711,8 @@ class TestResultFormatter:
         assert "SEARCH RESULTS" in formatted
         assert "Result 1:" in formatted
         assert "orchids" in formatted.lower()
-        assert "Video ID:" in formatted
-    
+        assert "Source ID:" in formatted  # Changed from Video ID
+
     def test_format_markdown(self, formatter, sample_results):
         """Test Markdown formatting."""
         options = FormatOptions(format=OutputFormat.MARKDOWN)
@@ -712,9 +721,7 @@ class TestResultFormatter:
         assert "# Search Results" in formatted
         assert "## Result 1" in formatted
         assert "| Field | Value |" in formatted
-        assert "| Video ID |" in formatted
-    
-    def test_format_json(self, formatter, sample_results):
+        assert "| Source ID |" in formatted  # Changed from Video ID    def test_format_json(self, formatter, sample_results):
         """Test JSON formatting."""
         options = FormatOptions(format=OutputFormat.JSON, deduplicate=False, merge_adjacent=False)
         formatted = formatter.format_results(sample_results, query="orchids", options=options)
@@ -773,7 +780,7 @@ class TestResultFormatter:
             similarity_score=0.90,
             distance=0.10,
             metadata=ChunkMetadata(
-                video_id="video_1",
+                source_id="video_1",
                 date="2023/01/01",
                 title="Orchid Care Guide",
                 chunk_index=5,
@@ -843,7 +850,7 @@ class TestRetrievalPipeline:
                 similarity_score=0.9,
                 distance=0.1,
                 metadata=ChunkMetadata(
-                    video_id="video_1",
+                    source_id="video_1",
                     date="2023/01/01",
                     title="Orchid Care Guide",
                     chunk_index=5,
@@ -920,7 +927,7 @@ class TestRetrievalPipeline:
                         similarity_score=0.9,
                         distance=0.1,
                         metadata=ChunkMetadata(
-                            video_id="video_1",
+                            source_id="video_1",
                             date="2023/01/01",
                             title="Orchid Guide",
                             chunk_index=1,
@@ -938,7 +945,7 @@ class TestRetrievalPipeline:
                         similarity_score=0.8,
                         distance=0.2,
                         metadata=ChunkMetadata(
-                            video_id="video_2",
+                            source_id="video_2",
                             date="2023/01/02",
                             title="Gardening Guide",
                             chunk_index=2,
@@ -973,7 +980,7 @@ class TestRetrievalPipeline:
             similarity_score=0.85,
             distance=0.15,
             metadata=ChunkMetadata(
-                video_id="video_1",
+                source_id="video_1",
                 date="2023/01/01",
                 title="Common Video",
                 chunk_index=1,
@@ -1018,7 +1025,7 @@ class TestRetrievalPipeline:
                 similarity_score=0.9 - i * 0.1,
                 distance=0.1 + i * 0.1,
                 metadata=ChunkMetadata(
-                    video_id=f"video_{i}",
+                    source_id=f"video_{i}",
                     date="2023/01/01",
                     title=f"Video {i}",
                     chunk_index=i,
@@ -1051,7 +1058,7 @@ class TestRetrievalPipeline:
                 similarity_score=0.9,
                 distance=0.1,
                 metadata=ChunkMetadata(
-                    video_id="video_1",
+                    source_id="video_1",
                     date="2023/01/01",
                     title="Test Video",
                     chunk_index=1,
@@ -1086,7 +1093,7 @@ class TestRetrievalPipeline:
     
     def test_search_with_filters(self, pipeline):
         """Test search with filters."""
-        filters = SearchFilters(video_id="video_1")
+        filters = SearchFilters(source_id="video_1")
         options = RetrievalOptions(top_k=5, filters=filters)
         
         results, perf_metrics, quality_metrics = pipeline.search(

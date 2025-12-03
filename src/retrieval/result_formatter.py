@@ -112,10 +112,12 @@ class ResultFormatter:
             # Format metadata
             metadata_lines = []
             if result.metadata:
-                metadata_lines.append(f"Video ID: {result.metadata.video_id}")
+                metadata_lines.append(f"Source ID: {result.metadata.source_id}")
                 metadata_lines.append(f"Title: {result.metadata.title}")
                 metadata_lines.append(f"Date: {result.metadata.date}")
                 metadata_lines.append(f"Chunk Index: {result.metadata.chunk_index}")
+                if hasattr(result.metadata, 'content_type') and result.metadata.content_type:
+                    metadata_lines.append(f"Content Type: {result.metadata.content_type}")
             
             # Format similarity score
             score_str = self._format_score(result.similarity_score, options.score_format)
@@ -158,10 +160,12 @@ class ResultFormatter:
             lines.append("| Field | Value |")
             lines.append("|-------|-------|")
             if result.metadata:
-                lines.append(f"| Video ID | `{result.metadata.video_id}` |")
+                lines.append(f"| Source ID | `{result.metadata.source_id}` |")
                 lines.append(f"| Title | {result.metadata.title} |")
                 lines.append(f"| Date | {result.metadata.date} |")
                 lines.append(f"| Chunk Index | {result.metadata.chunk_index} |")
+                if hasattr(result.metadata, 'content_type') and result.metadata.content_type:
+                    lines.append(f"| Content Type | {result.metadata.content_type} |")
             
             score_str = self._format_score(result.similarity_score, options.score_format)
             lines.append(f"| Similarity | **{score_str}** |")
@@ -241,7 +245,7 @@ class ResultFormatter:
         options: FormatOptions
     ) -> List[SearchResult]:
         """
-        Deduplicate and merge adjacent results from the same video.
+        Deduplicate and merge adjacent results from the same source document.
         
         Args:
             results: List of SearchResult objects
@@ -253,37 +257,37 @@ class ResultFormatter:
         if not results:
             return results
         
-        # Group by video_id
-        video_groups: Dict[str, List[SearchResult]] = {}
+        # Group by source_id
+        source_groups: Dict[str, List[SearchResult]] = {}
         for result in results:
-            video_id = result.metadata.video_id if result.metadata else "unknown"
-            if video_id not in video_groups:
-                video_groups[video_id] = []
-            video_groups[video_id].append(result)
+            source_id = result.metadata.source_id if result.metadata else "unknown"
+            if source_id not in source_groups:
+                source_groups[source_id] = []
+            source_groups[source_id].append(result)
         
         deduplicated = []
         
-        for video_id, video_results in video_groups.items():
+        for source_id, source_results in source_groups.items():
             if options.deduplicate:
                 # Remove exact duplicates (same chunk_id)
                 seen_chunks: Set[str] = set()
                 unique_results = []
-                for result in video_results:
+                for result in source_results:
                     chunk_id = result.metadata.chunk_id if result.metadata else result.id
                     if chunk_id not in seen_chunks:
                         seen_chunks.add(chunk_id)
                         unique_results.append(result)
-                video_results = unique_results
+                source_results = unique_results
             
-            if options.merge_adjacent and len(video_results) > 1:
+            if options.merge_adjacent and len(source_results) > 1:
                 # Sort by chunk_index
-                video_results.sort(key=lambda r: r.metadata.chunk_index if r.metadata else 0)
+                source_results.sort(key=lambda r: r.metadata.chunk_index if r.metadata else 0)
                 
                 # Merge adjacent chunks
                 merged_results = []
-                current_group = [video_results[0]]
+                current_group = [source_results[0]]
                 
-                for result in video_results[1:]:
+                for result in source_results[1:]:
                     prev_result = current_group[-1]
                     prev_index = prev_result.metadata.chunk_index if prev_result.metadata else 0
                     curr_index = result.metadata.chunk_index if result.metadata else 0
@@ -302,7 +306,7 @@ class ResultFormatter:
                 
                 deduplicated.extend(merged_results)
             else:
-                deduplicated.extend(video_results)
+                deduplicated.extend(source_results)
         
         # Re-sort by similarity score
         deduplicated.sort(key=lambda r: r.similarity_score, reverse=True)
@@ -314,7 +318,7 @@ class ResultFormatter:
         Merge a group of adjacent results into a single result.
         
         Args:
-            group: List of SearchResult objects from same video
+            group: List of SearchResult objects from same source document
         
         Returns:
             Merged SearchResult
@@ -381,27 +385,27 @@ class ResultFormatter:
                     expanded_results.append(result)
                     continue
                 
-                video_id = result.metadata.video_id
+                source_id = result.metadata.source_id
                 chunk_index = result.metadata.chunk_index
                 
-                # Get surrounding chunks from same video
+                # Get surrounding chunks from same source document
                 context_chunks = []
                 
                 # Query for chunks in range [chunk_index - context_window, chunk_index + context_window]
-                # Filter by video_id and chunk_index range
+                # Filter by source_id and chunk_index range
                 try:
-                    # Get all chunks from this video
-                    video_chunks = collection.get(
-                        where={"video_id": {"$eq": video_id}},
+                    # Get all chunks from this source document
+                    source_chunks = collection.get(
+                        where={"source_id": {"$eq": source_id}},
                         include=['documents', 'metadatas']
                     )
                     
                     # Find chunks in context window
-                    for i, meta in enumerate(video_chunks.get('metadatas', [])):
+                    for i, meta in enumerate(source_chunks.get('metadatas', [])):
                         if meta and 'chunk_index' in meta:
                             idx = int(meta['chunk_index'])
                             if abs(idx - chunk_index) <= context_window and idx != chunk_index:
-                                doc_text = video_chunks.get('documents', [])[i]
+                                doc_text = source_chunks.get('documents', [])[i]
                                 if doc_text:
                                     context_chunks.append((idx, doc_text))
                     

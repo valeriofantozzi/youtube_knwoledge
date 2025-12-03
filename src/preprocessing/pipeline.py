@@ -1,12 +1,12 @@
 """
 Preprocessing Pipeline Module
 
-Orchestrates the complete preprocessing pipeline: SRT parsing, text cleaning,
-chunking, and metadata attachment.
+Orchestrates the complete preprocessing pipeline: document parsing, text cleaning,
+chunking, and metadata attachment. Supports multiple file formats through pluggable parsers.
 """
 
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Union
 from dataclasses import dataclass
 import json
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
@@ -15,18 +15,30 @@ from functools import partial
 from .srt_parser import SRTParser, SubtitleEntry
 from .text_cleaner import TextCleaner
 from .chunker import SemanticChunker, Chunk
-from .metadata_extractor import MetadataExtractor, VideoMetadata
+from .metadata_extractor import MetadataExtractor
+from .parser_base import (
+    DocumentParser, 
+    ParserRegistry, 
+    TextEntry, 
+    SourceMetadata,
+    find_document_files
+)
 from ..utils.logger import get_default_logger
 from ..utils.config import get_config
 
 
 @dataclass
-class ProcessedVideo:
-    """Represents a fully processed video."""
-    metadata: VideoMetadata
-    entries: List[SubtitleEntry]
+class ProcessedDocument:
+    """
+    Represents a fully processed document.
+    
+    This is the generalized version that works with any document type.
+    """
+    metadata: SourceMetadata
+    entries: Union[List[TextEntry], List[SubtitleEntry]]
     chunks: List[Chunk]
     stats: Dict
+    content_type: str = "unknown"  # File type: "srt", "txt", "md", etc.
     
     def to_dict(self) -> Dict:
         """Convert to dictionary."""
@@ -34,11 +46,22 @@ class ProcessedVideo:
             "metadata": self.metadata.to_dict(),
             "chunks": [chunk.to_dict() for chunk in self.chunks],
             "stats": self.stats,
+            "content_type": self.content_type,
         }
+    
+    @property
+    def source_id(self) -> str:
+        """Get source ID from metadata."""
+        return self.metadata.source_id
 
 
 class PreprocessingPipeline:
-    """Main preprocessing pipeline orchestrator."""
+    """
+    Main preprocessing pipeline orchestrator.
+    
+    Supports multiple document types through the ParserRegistry.
+    Falls back to SRT parser for backward compatibility.
+    """
     
     def __init__(
         self,
@@ -54,7 +77,7 @@ class PreprocessingPipeline:
             chunk_overlap: Overlap size in tokens (default from config)
             min_chunk_size: Minimum chunk size in tokens (default from config)
         """
-        self.parser = SRTParser()
+        self.parser = SRTParser()  # Legacy parser for backward compatibility
         self.cleaner = TextCleaner()
         self.chunker = SemanticChunker(
             chunk_size=chunk_size,
@@ -69,74 +92,36 @@ class PreprocessingPipeline:
         self,
         file_path: Path,
         skip_errors: bool = True
-    ) -> Optional[ProcessedVideo]:
+    ) -> Optional[ProcessedDocument]:
         """
-        Process a single SRT file through the complete pipeline.
+        Process a single document file through the complete pipeline.
+        
+        Automatically selects the appropriate parser based on file extension.
         
         Args:
-            file_path: Path to SRT file
+            file_path: Path to document file
             skip_errors: If True, return None on errors instead of raising
         
         Returns:
-            ProcessedVideo object or None if error and skip_errors=True
+            ProcessedDocument object or None if error and skip_errors=True
         """
         try:
-            # Extract metadata
-            self.logger.debug(f"Extracting metadata from {file_path.name}")
-            try:
-                metadata = self.metadata_extractor.extract_from_filename(file_path)
-            except ValueError as e:
-                # If metadata extraction fails, create default metadata
-                self.logger.warning(
-                    f"Could not extract metadata from {file_path.name}: {e}. "
-                    "Using default metadata."
-                )
-                from .metadata_extractor import VideoMetadata
-                metadata = VideoMetadata(
-                    video_id="unknown",
-                    date="0000/00/00",
-                    title=file_path.stem,
-                    filename=file_path.name,
-                    file_path=str(file_path.absolute())
-                )
+            # Get appropriate parser from registry
+            parser = ParserRegistry.get_parser(file_path)
             
-            # Parse SRT file
-            self.logger.debug(f"Parsing SRT file: {file_path.name}")
-            entries = self.parser.parse_file(file_path)
-            
-            if not entries:
-                self.logger.warning(f"No subtitle entries found in {file_path.name}")
-                return None
-            
-            # Clean text from entries
-            self.logger.debug(f"Cleaning text from {len(entries)} entries")
-            cleaned_texts = self.cleaner.clean_subtitle_entries(entries)
-            all_cleaned_text = ' '.join(cleaned_texts)
-            
-            # Create chunks
-            self.logger.debug(f"Creating chunks from cleaned text")
-            chunk_metadata = {
-                "video_id": metadata.video_id,
-                "date": metadata.date,
-                "title": metadata.title,
-                "filename": metadata.filename,
-            }
-            chunks = self.chunker.chunk_text(all_cleaned_text, chunk_metadata)
-            
-            # Calculate statistics
-            stats = self._calculate_stats(entries, chunks, all_cleaned_text)
-            
-            self.logger.info(
-                f"Processed {file_path.name}: {len(entries)} entries, "
-                f"{len(chunks)} chunks, {stats['total_tokens']} tokens"
-            )
-            
-            return ProcessedVideo(
-                metadata=metadata,
-                entries=entries,
-                chunks=chunks,
-                stats=stats
-            )
+            if parser:
+                # Use new parser infrastructure
+                return self._process_with_parser(file_path, parser)
+            else:
+                # Fall back to legacy SRT processing for .srt files
+                if file_path.suffix.lower() in ['.srt', '.sub']:
+                    return self._process_srt_legacy(file_path)
+                else:
+                    self.logger.warning(
+                        f"No parser found for {file_path.suffix}. "
+                        f"Supported formats: {ParserRegistry.supported_extensions()}"
+                    )
+                    return None
         
         except Exception as e:
             self.logger.error(f"Error processing {file_path.name}: {e}", exc_info=True)
@@ -144,24 +129,149 @@ class PreprocessingPipeline:
                 return None
             raise
     
+    def _process_with_parser(
+        self,
+        file_path: Path,
+        parser: DocumentParser
+    ) -> Optional[ProcessedDocument]:
+        """
+        Process file using the new parser infrastructure.
+        
+        Args:
+            file_path: Path to document file
+            parser: DocumentParser instance
+            
+        Returns:
+            ProcessedDocument object or None
+        """
+        self.logger.debug(f"Processing {file_path.name} with {parser.parser_name}")
+        
+        # Parse document
+        entries, metadata = parser.parse(file_path)
+        
+        if not entries:
+            self.logger.warning(f"No content entries found in {file_path.name}")
+            return None
+        
+        # Extract text from entries
+        texts = [entry.text for entry in entries]
+        all_text = ' '.join(texts)
+        
+        # Clean text
+        cleaned_text = self.cleaner.clean_text(all_text)
+        
+        # Create chunks with metadata
+        chunk_metadata = {
+            "source_id": metadata.source_id,
+            "date": metadata.date,
+            "title": metadata.title,
+            "filename": metadata.original_filename,
+            "source_type": metadata.source_type,
+        }
+        chunks = self.chunker.chunk_text(cleaned_text, chunk_metadata)
+        
+        # Calculate statistics
+        stats = self._calculate_stats_generic(entries, chunks, cleaned_text)
+        
+        self.logger.info(
+            f"Processed {file_path.name}: {len(entries)} entries, "
+            f"{len(chunks)} chunks, {stats['total_tokens']} tokens"
+        )
+        
+        return ProcessedDocument(
+            metadata=metadata,
+            entries=entries,
+            chunks=chunks,
+            stats=stats,
+            content_type=metadata.source_type
+        )
+    
+    def _process_srt_legacy(self, file_path: Path) -> Optional[ProcessedDocument]:
+        """
+        Legacy SRT processing for backward compatibility.
+        
+        Args:
+            file_path: Path to SRT file
+            
+        Returns:
+            ProcessedDocument object or None
+        """
+        # Extract metadata using legacy extractor
+        self.logger.debug(f"Extracting metadata from {file_path.name}")
+        try:
+            metadata = self.metadata_extractor.extract_from_filename(file_path)
+        except ValueError as e:
+            self.logger.warning(
+                f"Could not extract metadata from {file_path.name}: {e}. "
+                "Using default metadata."
+            )
+            metadata = SourceMetadata(
+                source_id="unknown",
+                date="0000/00/00",
+                title=file_path.stem,
+                source_type="srt",
+                original_filename=file_path.name,
+                file_path=str(file_path.absolute())
+            )
+        
+        # Parse SRT file
+        self.logger.debug(f"Parsing SRT file: {file_path.name}")
+        entries = self.parser.parse_file(file_path)
+        
+        if not entries:
+            self.logger.warning(f"No subtitle entries found in {file_path.name}")
+            return None
+        
+        # Clean text from entries
+        self.logger.debug(f"Cleaning text from {len(entries)} entries")
+        cleaned_texts = self.cleaner.clean_subtitle_entries(entries)
+        all_cleaned_text = ' '.join(cleaned_texts)
+        
+        # Create chunks
+        self.logger.debug(f"Creating chunks from cleaned text")
+        chunk_metadata = {
+            "source_id": metadata.source_id,
+            "date": metadata.date,
+            "title": metadata.title,
+            "filename": metadata.original_filename,
+            "source_type": "srt",
+        }
+        chunks = self.chunker.chunk_text(all_cleaned_text, chunk_metadata)
+        
+        # Calculate statistics
+        stats = self._calculate_stats(entries, chunks, all_cleaned_text)
+        
+        self.logger.info(
+            f"Processed {file_path.name}: {len(entries)} entries, "
+            f"{len(chunks)} chunks, {stats['total_tokens']} tokens"
+        )
+        
+        return ProcessedDocument(
+            metadata=metadata,
+            entries=entries,
+            chunks=chunks,
+            stats=stats,
+            content_type="srt"
+        )
+    
     def process_multiple_files(
         self,
         file_paths: List[Path],
         skip_errors: bool = True,
         parallel: bool = True,
         max_workers: Optional[int] = None
-    ) -> List[ProcessedVideo]:
+    ) -> List[ProcessedDocument]:
         """
-        Process multiple SRT files, optionally in parallel.
+        Process multiple document files, optionally in parallel.
         
         Args:
-            file_paths: List of paths to SRT files
+            file_paths: List of paths to document files
             skip_errors: If True, skip files that fail to process
             parallel: If True, use parallel processing
             max_workers: Maximum number of worker processes/threads (default from config)
         
         Returns:
-            List of ProcessedVideo objects
+            List of ProcessedDocument objects
         """
         if not file_paths:
             return []
@@ -180,7 +290,6 @@ class PreprocessingPipeline:
         self.logger.info(f"Processing {len(file_paths)} files in parallel with {max_workers} workers")
         
         # Use ThreadPoolExecutor for I/O-bound operations (file reading)
-        # ProcessPoolExecutor would require pickling the entire pipeline, which is complex
         results = []
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
@@ -206,7 +315,7 @@ class PreprocessingPipeline:
     
     def _calculate_stats(
         self,
-        entries: List[SubtitleEntry],
+        entries: Union[List[SubtitleEntry], List[TextEntry]],
         chunks: List[Chunk],
         text: str
     ) -> Dict:
@@ -214,7 +323,7 @@ class PreprocessingPipeline:
         Calculate processing statistics.
         
         Args:
-            entries: List of subtitle entries
+            entries: List of text entries (SubtitleEntry or TextEntry)
             chunks: List of chunks
             text: Full cleaned text
         
@@ -234,9 +343,28 @@ class PreprocessingPipeline:
             "max_chunk_size": max((c.token_count for c in chunks), default=0),
         }
     
+    def _calculate_stats_generic(
+        self,
+        entries: List[TextEntry],
+        chunks: List[Chunk],
+        text: str
+    ) -> Dict:
+        """
+        Calculate processing statistics for generic text entries.
+        
+        Args:
+            entries: List of TextEntry objects
+            chunks: List of chunks
+            text: Full cleaned text
+        
+        Returns:
+            Statistics dictionary
+        """
+        return self._calculate_stats(entries, chunks, text)
+    
     def save_processed_chunks(
         self,
-        processed_video: ProcessedVideo,
+        processed_document: ProcessedDocument,
         output_dir: Path,
         format: str = "json"
     ) -> Path:
@@ -244,7 +372,7 @@ class PreprocessingPipeline:
         Save processed chunks to disk.
         
         Args:
-            processed_video: ProcessedVideo object
+            processed_document: ProcessedDocument object
             output_dir: Output directory
             format: Output format ("json" or "parquet")
         
@@ -253,9 +381,12 @@ class PreprocessingPipeline:
         """
         output_dir.mkdir(parents=True, exist_ok=True)
         
+        # Use source_id for filename
+        source_id = processed_document.source_id
+        
         if format == "json":
-            output_file = output_dir / f"{processed_video.metadata.video_id}_chunks.json"
-            data = processed_video.to_dict()
+            output_file = output_dir / f"{source_id}_chunks.json"
+            data = processed_document.to_dict()
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
         else:
@@ -267,72 +398,97 @@ class PreprocessingPipeline:
         self,
         input_dir: Path,
         output_dir: Optional[Path] = None,
-        pattern: str = "*.srt",
+        pattern: Optional[str] = None,
+        extensions: Optional[List[str]] = None,
         skip_errors: bool = True
-    ) -> Tuple[List[ProcessedVideo], Dict]:
+    ) -> Tuple[List[ProcessedDocument], Dict]:
         """
-        Process all SRT files in a directory.
+        Process all document files in a directory.
         
         Args:
-            input_dir: Input directory containing SRT files
+            input_dir: Input directory containing document files
             output_dir: Optional output directory for saved chunks
-            pattern: File pattern to match
+            pattern: File pattern to match (deprecated, use extensions)
+            extensions: List of file extensions to process (default: all supported)
             skip_errors: If True, skip files that fail to process
         
         Returns:
-            Tuple of (list of ProcessedVideo objects, summary statistics)
+            Tuple of (list of ProcessedDocument objects, summary statistics)
         """
-        # Find all SRT files
-        srt_files = list(input_dir.rglob(pattern))
-        self.logger.info(f"Found {len(srt_files)} SRT files in {input_dir}")
+        # Handle backward compatibility with pattern argument
+        if pattern and not extensions:
+            # Extract extension from pattern like "*.srt"
+            if pattern.startswith("*."):
+                extensions = [pattern[1:]]  # Remove "*" 
+            else:
+                # Fall back to old behavior
+                doc_files = list(input_dir.rglob(pattern))
+                self.logger.info(f"Found {len(doc_files)} files matching {pattern} in {input_dir}")
+                processed_docs = self.process_multiple_files(doc_files, skip_errors=skip_errors)
+                summary = self._calculate_summary_stats(processed_docs)
+                return processed_docs, summary
+        
+        # Find all document files using new infrastructure
+        doc_files = find_document_files(input_dir, extensions=extensions, recursive=True)
+        self.logger.info(f"Found {len(doc_files)} document files in {input_dir}")
         
         # Process files
-        processed_videos = self.process_multiple_files(srt_files, skip_errors=skip_errors)
+        processed_docs = self.process_multiple_files(doc_files, skip_errors=skip_errors)
         
         # Save chunks if output directory specified
         if output_dir:
             self.logger.info(f"Saving processed chunks to {output_dir}")
-            for processed in processed_videos:
+            for processed in processed_docs:
                 try:
                     self.save_processed_chunks(processed, output_dir)
                 except Exception as e:
                     self.logger.error(f"Error saving chunks: {e}")
         
         # Calculate summary statistics
-        summary = self._calculate_summary_stats(processed_videos)
+        summary = self._calculate_summary_stats(processed_docs)
         
-        return processed_videos, summary
+        return processed_docs, summary
     
     def _calculate_summary_stats(
         self,
-        processed_videos: List[ProcessedVideo]
+        processed_documents: List[ProcessedDocument]
     ) -> Dict:
         """
-        Calculate summary statistics across all processed videos.
+        Calculate summary statistics across all processed documents.
         
         Args:
-            processed_videos: List of ProcessedVideo objects
+            processed_documents: List of ProcessedDocument objects
         
         Returns:
             Summary statistics dictionary
         """
-        if not processed_videos:
+        if not processed_documents:
             return {
-                "total_videos": 0,
+                "total_documents": 0,
                 "total_chunks": 0,
                 "total_tokens": 0,
             }
         
-        total_chunks = sum(len(pv.chunks) for pv in processed_videos)
-        total_tokens = sum(pv.stats["total_tokens"] for pv in processed_videos)
-        total_entries = sum(pv.stats["total_entries"] for pv in processed_videos)
+        total_chunks = sum(len(pd.chunks) for pd in processed_documents)
+        total_tokens = sum(pd.stats["total_tokens"] for pd in processed_documents)
+        total_entries = sum(pd.stats["total_entries"] for pd in processed_documents)
+        
+        # Count by content type
+        content_types = {}
+        for pd in processed_documents:
+            ct = pd.content_type
+            content_types[ct] = content_types.get(ct, 0) + 1
         
         return {
-            "total_videos": len(processed_videos),
+            "total_documents": len(processed_documents),
             "total_chunks": total_chunks,
             "total_tokens": total_tokens,
             "total_entries": total_entries,
-            "avg_chunks_per_video": round(total_chunks / len(processed_videos), 2),
-            "avg_tokens_per_video": round(total_tokens / len(processed_videos), 2),
+            "avg_chunks_per_document": round(total_chunks / len(processed_documents), 2),
+            "avg_tokens_per_document": round(total_tokens / len(processed_documents), 2),
+            "content_types": content_types,
         }
 
+
+# Backward compatibility aliases for function names
+process_srt_files = PreprocessingPipeline.process_multiple_files

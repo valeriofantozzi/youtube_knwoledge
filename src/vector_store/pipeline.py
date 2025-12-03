@@ -2,6 +2,7 @@
 Vector Store Pipeline Module
 
 Orchestrates the complete vector store indexing pipeline.
+Supports any document type (SRT, text, markdown, etc.).
 """
 
 import numpy as np
@@ -11,7 +12,7 @@ from typing import List, Dict, Optional, Tuple, Any
 from .chroma_manager import ChromaDBManager
 from .indexer import Indexer
 from .schema import ChunkMetadata, chromadb_metadata_to_schema
-from ..preprocessing.pipeline import ProcessedVideo
+from ..preprocessing.pipeline import ProcessedDocument
 from ..embeddings.pipeline import EmbeddingPipeline
 from ..embeddings.embedder import Embedder
 from ..embeddings.model_registry import get_model_registry
@@ -47,19 +48,19 @@ class VectorStorePipeline:
         )
         self.indexer = Indexer(chroma_manager=self.chroma_manager)
     
-    def index_processed_video(
+    def index_processed_document(
         self,
-        processed_video: ProcessedVideo,
+        processed_document: ProcessedDocument,
         embeddings: np.ndarray,
         skip_duplicates: bool = True,
         show_progress: bool = True,
         model_name: Optional[str] = None
     ) -> int:
         """
-        Index a processed video with embeddings.
+        Index a processed document with embeddings.
 
         Args:
-            processed_video: ProcessedVideo object
+            processed_document: ProcessedDocument object
             embeddings: Embeddings array for chunks
             skip_duplicates: Skip chunks that already exist
             show_progress: Show progress bar
@@ -68,27 +69,28 @@ class VectorStorePipeline:
         Returns:
             Number of chunks indexed
         """
-        if not processed_video.chunks:
+        if not processed_document.chunks:
             self.logger.warning("No chunks to index")
             return 0
         
-        if len(processed_video.chunks) != len(embeddings):
+        if len(processed_document.chunks) != len(embeddings):
             raise ValueError(
                 f"Chunks and embeddings count mismatch: "
-                f"{len(processed_video.chunks)} chunks vs {len(embeddings)} embeddings"
+                f"{len(processed_document.chunks)} chunks vs {len(embeddings)} embeddings"
             )
         
-        # Prepare video metadata
-        video_metadata = {
-            "video_id": processed_video.metadata.video_id,
-            "date": processed_video.metadata.date,
-            "title": processed_video.metadata.title,
-            "filename": processed_video.metadata.filename,
+        # Prepare source metadata
+        source_metadata = {
+            "source_id": processed_document.metadata.source_id,
+            "date": processed_document.metadata.date,
+            "title": processed_document.metadata.title,
+            "filename": processed_document.metadata.filename,
+            "content_type": processed_document.metadata.content_type,
         }
         
         # Check for duplicates if requested
         if skip_duplicates:
-            chunk_ids = [chunk.chunk_id for chunk in processed_video.chunks]
+            chunk_ids = [chunk.chunk_id for chunk in processed_document.chunks]
             duplicates = self.indexer.check_duplicates(chunk_ids)
             
             if duplicates:
@@ -101,7 +103,7 @@ class VectorStorePipeline:
                 filtered_embeddings = []
                 filtered_indices = []
                 
-                for i, chunk in enumerate(processed_video.chunks):
+                for i, chunk in enumerate(processed_document.chunks):
                     if chunk.chunk_id not in duplicates:
                         filtered_chunks.append(chunk)
                         filtered_embeddings.append(embeddings[i])
@@ -111,7 +113,7 @@ class VectorStorePipeline:
                     self.logger.info("All chunks are duplicates, nothing to index")
                     return 0
                 
-                processed_video.chunks = filtered_chunks
+                processed_document.chunks = filtered_chunks
                 embeddings = np.array(filtered_embeddings)
         
         # Validate embedding dimensions before indexing
@@ -125,70 +127,70 @@ class VectorStorePipeline:
 
         # Index chunks
         indexed_count = self.indexer.index_chunks(
-            chunks=processed_video.chunks,
+            chunks=processed_document.chunks,
             embeddings=embeddings,
-            video_metadata=video_metadata,
+            source_metadata=source_metadata,
             show_progress=show_progress,
             collection=collection
         )
         
         self.logger.info(
-            f"Indexed {indexed_count} chunks from {processed_video.metadata.filename}"
+            f"Indexed {indexed_count} chunks from {processed_document.metadata.filename}"
         )
         
         return indexed_count
     
-    def index_multiple_videos(
+    def index_multiple_documents(
         self,
-        processed_videos: List[ProcessedVideo],
+        processed_documents: List[ProcessedDocument],
         embeddings_list: List[np.ndarray],
         skip_duplicates: bool = True,
         show_progress: bool = True
     ) -> Dict[str, int]:
         """
-        Index multiple processed videos.
+        Index multiple processed documents.
         
         Args:
-            processed_videos: List of ProcessedVideo objects
+            processed_documents: List of ProcessedDocument objects
             embeddings_list: List of embeddings arrays
             skip_duplicates: Skip chunks that already exist
             show_progress: Show progress bar
         
         Returns:
-            Dictionary mapping video IDs to indexed chunk counts
+            Dictionary mapping source IDs to indexed chunk counts
         """
-        if len(processed_videos) != len(embeddings_list):
+        if len(processed_documents) != len(embeddings_list):
             raise ValueError(
-                f"Videos and embeddings count mismatch: "
-                f"{len(processed_videos)} videos vs {len(embeddings_list)} embedding arrays"
+                f"Documents and embeddings count mismatch: "
+                f"{len(processed_documents)} documents vs {len(embeddings_list)} embedding arrays"
             )
         
         results = {}
         
-        for i, (processed_video, embeddings) in enumerate(
-            zip(processed_videos, embeddings_list)
+        for i, (processed_document, embeddings) in enumerate(
+            zip(processed_documents, embeddings_list)
         ):
             self.logger.info(
-                f"Indexing video {i+1}/{len(processed_videos)}: "
-                f"{processed_video.metadata.filename}"
+                f"Indexing document {i+1}/{len(processed_documents)}: "
+                f"{processed_document.metadata.filename}"
             )
             
             try:
-                indexed_count = self.index_processed_video(
-                    processed_video,
+                indexed_count = self.index_processed_document(
+                    processed_document,
                     embeddings,
                     skip_duplicates=skip_duplicates,
                     show_progress=show_progress
                 )
                 
-                results[processed_video.metadata.video_id] = indexed_count
+                results[processed_document.metadata.source_id] = indexed_count
             
             except Exception as e:
                 self.logger.error(
-                    f"Error indexing video {processed_video.metadata.filename}: {e}",
+                    f"Error indexing document {processed_document.metadata.filename}: {e}",
                     exc_info=True
                 )
-                results[processed_video.metadata.video_id] = 0
+                results[processed_document.metadata.source_id] = 0
         
         return results
     

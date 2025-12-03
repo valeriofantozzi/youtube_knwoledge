@@ -1,69 +1,170 @@
-# Vector Database Web Viewer
+# Vector Database Web Explorer
 
-Interfaccia web interattiva per visualizzare e esplorare il vector database con supporto multi-modello per gli embedding.
+Interactive web interface for managing subtitle embeddings with a complete processing pipeline.
 
-## Installazione
+## Overview
 
-Le dipendenze sono già installate se hai eseguito `pip install -r requirements.txt`.
+The application is organized into three main sections:
 
-Se necessario:
+1. **📥 Load Documents** - Upload SRT files and generate embeddings
+2. **🔬 PostProcessing** - Visualize and analyze the embedding space
+3. **🔍 Search** - Perform semantic search with filters
+
+## Installation
+
+Dependencies are already installed if you ran `pip install -r requirements.txt`.
+
+If needed:
+
 ```bash
 source .venv/bin/activate
-pip install streamlit plotly
+pip install streamlit plotly umap-learn hdbscan
 ```
 
-## Avvio
+## Quick Start
 
 ```bash
 ./start_viewer.sh
 ```
 
-oppure manualmente:
+Or manually:
 
 ```bash
 source .venv/bin/activate
 streamlit run streamlit_app.py --server.port 8601
 ```
 
-L'applicazione si aprirà automaticamente nel browser all'indirizzo `http://localhost:8601`
+The application will automatically open in your browser at `http://localhost:8601`
 
-## Funzionalità
+---
 
-- **Selezione Modello**: Scegli tra diversi modelli di embedding (BGE, EmbeddingGemma) dalla sidebar
-- **Isolamento Collection**: Ogni modello utilizza collection separate per evitare conflitti
-- **Statistiche per Modello**: Visualizza statistiche specifiche del modello selezionato
-- **Grafici**: Distribuzione dei chunks per data con grafici interattivi
-- **Ricerca semantica**: Cerca nel database usando query in linguaggio naturale con il modello selezionato
-- **Browser documenti**: Esplora i documenti con filtri per video ID e data
-- **Lista video**: Visualizza tutti i video nel database con conteggio chunks
-- **Switching Dinamico**: Cambia modello al volo senza riavviare l'applicazione
+## Section Details
 
-## Uso
+### 📥 Load Documents
 
-1. Avvia l'applicazione con `./start_viewer.sh` o `streamlit run streamlit_app.py --server.port 8601`
-2. **Seleziona il modello** dalla barra laterale (BGE o EmbeddingGemma)
-3. Usa la barra laterale per navigare tra le diverse sezioni
-4. Inserisci una query nella sezione "Semantic Search" e clicca "Search"
-5. Esplora i documenti usando i filtri nella sezione "Document Browser"
-6. Visualizza la lista completa dei video nella sezione "Video List"
-7. **Cambia modello** in qualsiasi momento - l'applicazione passerà automaticamente alla collection corrispondente
+Upload subtitle files and process them through the complete pipeline.
 
-## Modelli Supportati
+**Features:**
+
+- Upload single or multiple SRT files (drag & drop supported)
+- Alternatively, specify a directory path containing SRT files
+- Select embedding model from the registry
+- Configure batch size and processing options
+- Real-time progress tracking with phase indicators
+- Skip already indexed videos to avoid duplicates
+
+**Processing Pipeline:**
+
+1. **Preprocessing**: Parse SRT files and create semantic chunks
+2. **Embedding**: Generate vector embeddings using selected model
+3. **Indexing**: Store embeddings in ChromaDB vector database
+
+---
+
+### 🔬 PostProcessing
+
+Analyze and visualize your embedding space.
+
+**Tabs:**
+
+#### Overview
+
+- Key metrics: total documents, unique videos, average chunks per video
+- Date distribution chart
+- Top videos by chunk count
+
+#### Visualization
+
+- 2D and 3D scatter plots of the embedding space
+- Dimensionality reduction methods: UMAP (fast), t-SNE (better separation), PCA
+- Color by: Video ID, Date, Cluster, or None
+- Download coordinates as CSV
+
+#### Clustering
+
+- HDBSCAN clustering with configurable parameters
+- Quick presets: Quick, Balanced, Detailed
+- Manual parameter tuning: min_cluster_size, min_samples, metric
+- Cluster quality metrics: Silhouette Score, Davies-Bouldin Index
+- Explore cluster contents with sample documents
+
+#### Export
+
+- Export video list as CSV
+- Export clustering results
+- Download visualization coordinates
+
+---
+
+### 🔍 Search
+
+Perform semantic search with natural language queries.
+
+**Features:**
+
+- Natural language query input
+- Configurable result count and minimum similarity score
+- Advanced filters:
+  - Filter by video ID
+  - Date range filters
+  - Title keywords (comma-separated)
+- Results display with:
+  - Similarity score bar (color-coded)
+  - Video title and metadata
+  - Text preview with query highlighting
+  - Full text expansion
+  - Direct link to YouTube video
+- Export search results as CSV
+
+**Tips:**
+
+- Use natural language questions for best results
+- Try descriptive phrases like "how to care for orchids in winter"
+- Use filters to narrow down results to specific videos or date ranges
+
+---
+
+## Architecture
+
+```
+streamlit_app.py              # Main entry point
+src/
+└── ui/
+    ├── __init__.py           # UI module exports
+    ├── state.py              # Session state management
+    ├── theme.py              # Design system (colors, icons)
+    ├── components/           # Reusable UI components
+    │   ├── feedback.py       # Toast, errors, empty states
+    │   ├── metric_card.py    # Statistics display
+    │   ├── progress_tracker.py # Multi-phase progress
+    │   └── result_card.py    # Search result display
+    └── pages/                # Page modules
+        ├── load_documents.py # Load Documents section
+        ├── postprocessing.py # PostProcessing section
+        └── search.py         # Search section
+```
+
+---
+
+## Supported Models
 
 ### BAAI/bge-large-en-v1.5
-- **Dimensioni**: 1024
-- **Lunghezza massima**: 512 token
-- **Ideale per**: Ricerca generale di alta qualità
+
+- **Dimensions**: 1024
+- **Max Length**: 512 tokens
+- **Best for**: High-quality general search
 
 ### Google/embeddinggemma-300m
-- **Dimensioni**: 768 (con supporto MRL per dimensioni flessibili)
-- **Lunghezza massima**: 2048 token
-- **Ideale per**: Contenuti lunghi e ricerca contestuale
 
-## Note Importanti
+- **Dimensions**: 768 (with MRL support for flexible dimensions)
+- **Max Length**: 2048 tokens
+- **Best for**: Long content and contextual search
 
-- **Collection Separate**: Ogni modello utilizza la propria collection nel database
-- **Ricerca Isolati**: I risultati di ricerca sono specifici del modello selezionato
-- **Switching**: Il cambio di modello è immediato ma richiede dati precedentemente processati con quel modello
-- **Performance**: EmbeddingGemma può essere più lento ma gestisce meglio testi lunghi
+---
 
+## Important Notes
+
+- **Separate Collections**: Each model uses its own collection in the database
+- **Model-Specific Search**: Search results are specific to the selected model
+- **Persistent Storage**: All data is stored in `data/vector_db/`
+- **Backup**: Original app backed up as `streamlit_app_old.py`

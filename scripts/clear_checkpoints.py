@@ -44,25 +44,25 @@ def clear_all_checkpoints(checkpoint_dir: Path) -> int:
     return count
 
 
-def clear_specific_checkpoint(checkpoint_dir: Path, video_id: str) -> bool:
+def clear_specific_checkpoint(checkpoint_dir: Path, source_id: str) -> bool:
     """
-    Clear checkpoint for a specific video.
+    Clear checkpoint for a specific document.
     
     Args:
         checkpoint_dir: Directory containing checkpoints
-        video_id: Video ID
+        source_id: Document source ID
         
     Returns:
         True if checkpoint was found and cleared
     """
-    checkpoint_file = checkpoint_dir / f"{video_id}_checkpoint.pkl"
+    checkpoint_file = checkpoint_dir / f"{source_id}_checkpoint.pkl"
     
     if checkpoint_file.exists():
         try:
             checkpoint_file.unlink()
             return True
         except Exception as e:
-            print(f"Error: Failed to delete checkpoint for {video_id}: {e}")
+            print(f"Error: Failed to delete checkpoint for {source_id}: {e}")
             return False
     
     return False
@@ -97,9 +97,17 @@ def main():
     )
     
     parser.add_argument(
+        "--source-id",
+        type=str,
+        help="Clear checkpoint for specific document source ID only"
+    )
+    
+    # Backward compatibility alias
+    parser.add_argument(
         "--video-id",
         type=str,
-        help="Clear checkpoint for specific video ID only"
+        dest="source_id",
+        help="(Deprecated: use --source-id) Clear checkpoint for specific document"
     )
     
     parser.add_argument(
@@ -138,14 +146,14 @@ def main():
         
         for checkpoint in checkpoints:
             size_kb = checkpoint.stat().st_size / 1024
-            video_id = checkpoint.stem.replace("_checkpoint", "")
-            print(f"  - {video_id}: {size_kb:.1f} KB")
+            source_id = checkpoint.stem.replace("_checkpoint", "")
+            print(f"  - {source_id}: {size_kb:.1f} KB")
         
         return 0
     
     # Clear specific checkpoint
-    if args.video_id:
-        print(f"Clearing checkpoint for video: {args.video_id}")
+    if args.source_id:
+        print(f"Clearing checkpoint for document: {args.source_id}")
         
         if not args.force:
             response = input("Are you sure? This cannot be undone. (y/N): ")
@@ -153,12 +161,12 @@ def main():
                 print("Cancelled.")
                 return 0
         
-        if clear_specific_checkpoint(checkpoint_dir, args.video_id):
-            print(f"✓ Cleared checkpoint for {args.video_id}")
-            logger.info(f"Cleared checkpoint for video {args.video_id}")
+        if clear_specific_checkpoint(checkpoint_dir, args.source_id):
+            print(f"✓ Cleared checkpoint for {args.source_id}")
+            logger.info(f"Cleared checkpoint for document {args.source_id}")
             return 0
         else:
-            print(f"✗ No checkpoint found for {args.video_id}")
+            print(f"✗ No checkpoint found for {args.source_id}")
             return 1
     
     # Clear all checkpoints

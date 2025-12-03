@@ -1,7 +1,7 @@
 """
 Metadata Extractor Module
 
-Extracts metadata from subtitle filenames.
+Extracts metadata from document filenames (primarily SRT subtitle files).
 """
 
 import re
@@ -10,29 +10,11 @@ from typing import Dict, Optional
 from dataclasses import dataclass
 from datetime import datetime
 
-
-@dataclass
-class VideoMetadata:
-    """Represents video metadata extracted from filename."""
-    video_id: str
-    date: str  # Format: YYYY/MM/DD
-    title: str
-    filename: str
-    file_path: str
-    
-    def to_dict(self) -> Dict:
-        """Convert to dictionary."""
-        return {
-            "video_id": self.video_id,
-            "date": self.date,
-            "title": self.title,
-            "filename": self.filename,
-            "file_path": str(self.file_path),
-        }
+from .parser_base import SourceMetadata
 
 
 class MetadataExtractor:
-    """Extracts metadata from subtitle filenames."""
+    """Extracts metadata from document filenames."""
     
     # Pattern for YouTube video ID (11 characters)
     YOUTUBE_ID_PATTERN = re.compile(r'[a-zA-Z0-9_-]{11}')
@@ -44,18 +26,18 @@ class MetadataExtractor:
         """Initialize metadata extractor."""
         pass
     
-    def extract_from_filename(self, file_path: Path) -> VideoMetadata:
+    def extract_from_filename(self, file_path: Path) -> SourceMetadata:
         """
         Extract metadata from filename.
         
-        Expected format: YYYYMMDD_<channel>_<video_id>_<title>.en.srt
+        Expected format: YYYYMMDD_<channel>_<source_id>_<title>.en.srt
         or variations thereof.
         
         Args:
             file_path: Path to subtitle file
         
         Returns:
-            VideoMetadata object
+            SourceMetadata object
         
         Raises:
             ValueError: If metadata cannot be extracted
@@ -84,10 +66,10 @@ class MetadataExtractor:
             raise ValueError(f"Invalid date in filename: {full_filename}")
         
         # Extract video ID (11 characters, typically after date and channel)
-        # Format: YYYYMMDD_<channel>_<11_char_video_id>_<title>
+        # Format: YYYYMMDD_<channel>_<11_char_source_id>_<title>
         # Find all potential 11-character sequences
         parts = filename.split('_')
-        video_id = None
+        source_id = None
         
         # Look for 11-character alphanumeric sequence (YouTube ID format)
         for i, part in enumerate(parts):
@@ -97,51 +79,51 @@ class MetadataExtractor:
             # Check if this part is exactly 11 characters and alphanumeric
             clean_part = part.replace('-', '').replace('_', '')
             if len(part) == 11 and clean_part.isalnum() and len(clean_part) == 11:
-                video_id = part
+                source_id = part
                 break
         
         # If not found, try regex pattern
-        if not video_id:
-            video_id_match = self.YOUTUBE_ID_PATTERN.search(filename)
-            if video_id_match:
+        if not source_id:
+            source_id_match = self.YOUTUBE_ID_PATTERN.search(filename)
+            if source_id_match:
                 # Make sure it's not part of the date
-                match_pos = video_id_match.start()
+                match_pos = source_id_match.start()
                 date_end = date_match.end()
                 if match_pos > date_end:
-                    video_id = video_id_match.group()
+                    source_id = source_id_match.group()
         
         # If video ID not found, try to extract from parts after date
         # Some files might have format: YYYYMMDD_<channel>_<partial_id>_<title>
-        if not video_id:
+        if not source_id:
             # Try to find any alphanumeric sequence that could be an ID
             parts_after_date = parts[1:]  # Skip date
             if len(parts_after_date) > 0:
                 # Use first non-empty part as potential ID (might be channel or partial ID)
                 potential_id = parts_after_date[0]
                 if potential_id and len(potential_id) >= 5:  # At least 5 chars
-                    video_id = potential_id[:11] if len(potential_id) >= 11 else potential_id
+                    source_id = potential_id[:11] if len(potential_id) >= 11 else potential_id
                 else:
                     # Fallback: use a placeholder
-                    video_id = "unknown"
+                    source_id = "unknown"
         
-        if not video_id:
-            raise ValueError(f"Cannot extract video ID from filename: {full_filename}")
+        if not source_id:
+            raise ValueError(f"Cannot extract source ID from filename: {full_filename}")
         
-        # Extract title (everything after video ID)
-        # Find position of video ID in filename (handle case where ID was truncated)
-        video_id_pos = filename.find(video_id)
-        if video_id_pos == -1:
-            # Try to find the original part that was used to create video_id
-            # Look for the part in filename that contains video_id
+        # Extract title (everything after source ID)
+        # Find position of source ID in filename (handle case where ID was truncated)
+        source_id_pos = filename.find(source_id)
+        if source_id_pos == -1:
+            # Try to find the original part that was used to create source_id
+            # Look for the part in filename that contains source_id
             parts_after_date = parts[1:]
             if parts_after_date:
-                # Find which part contains or matches video_id
+                # Find which part contains or matches source_id
                 for part in parts_after_date:
-                    if video_id in part or part.startswith(video_id):
-                        video_id_pos = filename.find(part)
-                        if video_id_pos != -1:
+                    if source_id in part or part.startswith(source_id):
+                        source_id_pos = filename.find(part)
+                        if source_id_pos != -1:
                             # Use the full part for position calculation
-                            title_start = video_id_pos + len(part)
+                            title_start = source_id_pos + len(part)
                             break
                 else:
                     # Fallback: skip first part after date
@@ -149,12 +131,12 @@ class MetadataExtractor:
                         # Skip date and first part (channel/id)
                         title_start = len(parts[0]) + len(parts[1]) + 2  # +2 for underscores
                     else:
-                        raise ValueError(f"Cannot find video ID position in filename: {full_filename}")
+                        raise ValueError(f"Cannot find source ID position in filename: {full_filename}")
             else:
-                raise ValueError(f"Cannot find video ID position in filename: {full_filename}")
+                raise ValueError(f"Cannot find source ID position in filename: {full_filename}")
         else:
-            # Title starts after video ID and underscore
-            title_start = video_id_pos + len(video_id)
+            # Title starts after source ID and underscore
+            title_start = source_id_pos + len(source_id)
             if title_start < len(filename) and filename[title_start] == '_':
                 title_start += 1
         
@@ -165,18 +147,19 @@ class MetadataExtractor:
         
         # If title is empty, use filename without extension and date
         if not title:
-            # Remove date and video ID parts
+            # Remove date and source ID parts
             title_parts = filename.split('_')
-            title_parts = [p for p in title_parts if p != date_match.group() and p != video_id]
+            title_parts = [p for p in title_parts if p != date_match.group() and p != source_id]
             title = ' '.join(title_parts).strip()
             if not title:
-                title = filename.replace(date_match.group(), '').replace(video_id, '').strip('_')
+                title = filename.replace(date_match.group(), '').replace(source_id, '').strip('_')
         
-        return VideoMetadata(
-            video_id=video_id,
-            date=date_str,
+        return SourceMetadata(
+            source_id=source_id,
             title=title,
-            filename=full_filename,
+            date=date_str,
+            source_type="srt",
+            original_filename=full_filename,
             file_path=str(file_path.absolute())
         )
     
@@ -201,7 +184,7 @@ class MetadataExtractor:
         
         return title
     
-    def extract_from_path(self, file_path: Path) -> VideoMetadata:
+    def extract_from_path(self, file_path: Path) -> SourceMetadata:
         """
         Extract metadata from file path (same as extract_from_filename).
         
@@ -209,22 +192,22 @@ class MetadataExtractor:
             file_path: Path to subtitle file
         
         Returns:
-            VideoMetadata object
+            SourceMetadata object
         """
         return self.extract_from_filename(file_path)
     
-    def validate_metadata(self, metadata: VideoMetadata) -> bool:
+    def validate_metadata(self, metadata: SourceMetadata) -> bool:
         """
         Validate extracted metadata.
         
         Args:
-            metadata: VideoMetadata object
+            metadata: SourceMetadata object
         
         Returns:
             True if valid, False otherwise
         """
         # Check video ID length (should be 11 characters)
-        if len(metadata.video_id) != 11:
+        if len(metadata.source_id) != 11:
             return False
         
         # Check date format
@@ -240,7 +223,7 @@ class MetadataExtractor:
         
         return True
     
-    def extract_batch(self, file_paths: list[Path]) -> Dict[Path, VideoMetadata]:
+    def extract_batch(self, file_paths: list[Path]) -> Dict[Path, SourceMetadata]:
         """
         Extract metadata from multiple files.
         
@@ -248,7 +231,7 @@ class MetadataExtractor:
             file_paths: List of file paths
         
         Returns:
-            Dictionary mapping paths to VideoMetadata objects
+            Dictionary mapping paths to SourceMetadata objects
         """
         results = {}
         for file_path in file_paths:

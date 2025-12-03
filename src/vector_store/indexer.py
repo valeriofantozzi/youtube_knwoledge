@@ -51,7 +51,7 @@ class Indexer:
         self,
         chunks: List,
         embeddings: np.ndarray,
-        video_metadata: Dict[str, Any],
+        source_metadata: Dict[str, Any],
         batch_size: int = 1000,
         show_progress: bool = True,
         collection: Optional[Any] = None
@@ -62,7 +62,7 @@ class Indexer:
         Args:
             chunks: List of chunk objects
             embeddings: Embeddings array (shape: [num_chunks, embedding_dim])
-            video_metadata: Video metadata dictionary
+            source_metadata: Source document metadata dictionary
             batch_size: Batch size for indexing
             show_progress: Show progress bar
             collection: Optional collection to use (uses default if None)
@@ -89,7 +89,7 @@ class Indexer:
         
         for chunk in chunks:
             # Create metadata
-            chunk_metadata = create_metadata_from_chunk(chunk, video_metadata)
+            chunk_metadata = create_metadata_from_chunk(chunk, source_metadata)
             
             # Validate metadata
             if not chunk_metadata.validate():

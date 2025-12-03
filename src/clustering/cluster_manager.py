@@ -14,13 +14,17 @@ from ..utils.logger import get_logger
 
 @dataclass
 class ClusterMetadata:
-    """Metadata for a cluster."""
+    """
+    Metadata for a cluster.
+    
+    Represents statistics and properties of a document cluster.
+    """
     cluster_id: int
     size: int
     centroid: Optional[np.ndarray] = None
     keywords: Optional[List[str]] = None
     theme: Optional[str] = None
-    video_ids: Optional[Set[str]] = None
+    source_ids: Optional[Set[str]] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -30,7 +34,7 @@ class ClusterMetadata:
             "centroid": self.centroid.tolist() if self.centroid is not None else None,
             "keywords": self.keywords or [],
             "theme": self.theme,
-            "video_ids": list(self.video_ids) if self.video_ids else []
+            "source_ids": list(self.source_ids) if self.source_ids else []
         }
 
 
@@ -177,17 +181,19 @@ class ClusterManager:
             if cluster_embeddings is not None and len(cluster_embeddings) > 0:
                 centroid = np.mean(cluster_embeddings, axis=0)
             
-            # Get video IDs
-            video_ids = set()
+            # Get source IDs
+            source_ids = set()
             for i in indices:
-                if metadatas[i] and "video_id" in metadatas[i]:
-                    video_ids.add(metadatas[i]["video_id"])
+                if metadatas[i]:
+                    sid = metadatas[i].get("source_id")
+                    if sid:
+                        source_ids.add(sid)
             
             cluster_stats[cluster_id] = ClusterMetadata(
                 cluster_id=cluster_id,
                 size=len(indices),
                 centroid=centroid,
-                video_ids=video_ids
+                source_ids=source_ids
             )
         
         return cluster_stats

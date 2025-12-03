@@ -263,7 +263,7 @@ class ClusterIntegrator:
         return {
             "cluster_id": cluster_id,
             "size": cluster_meta.size,
-            "video_ids": list(cluster_meta.video_ids) if cluster_meta.video_ids else [],
+            "source_ids": list(cluster_meta.source_ids) if cluster_meta.source_ids else [],
             "keywords": cluster_meta.keywords or [],
             "theme": cluster_meta.theme,
             "related_clusters": related

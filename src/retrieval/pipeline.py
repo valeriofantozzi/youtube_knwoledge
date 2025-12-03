@@ -58,7 +58,7 @@ class SearchQualityMetrics:
     min_similarity_score: float = 0.0
     max_similarity_score: float = 0.0
     score_variance: float = 0.0
-    diversity_score: float = 0.0  # How diverse are the results (different videos)
+    diversity_score: float = 0.0  # How diverse are the results (different source documents)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -343,9 +343,9 @@ class RetrievalPipeline:
         # Calculate variance
         variance = sum((s - avg_score) ** 2 for s in scores) / len(scores)
         
-        # Calculate diversity (fraction of unique videos)
-        unique_videos = set(r.metadata.video_id for r in results)
-        diversity_score = len(unique_videos) / len(results) if results else 0.0
+        # Calculate diversity (fraction of unique sources)
+        unique_sources = set(r.metadata.source_id for r in results)
+        diversity_score = len(unique_sources) / len(results) if results else 0.0
         
         return SearchQualityMetrics(
             avg_similarity_score=avg_score,
