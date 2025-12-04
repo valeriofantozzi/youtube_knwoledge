@@ -289,12 +289,9 @@ class Config:
             # Calculate workers based on percentage
             optimal_workers = max(1, int(cpu_count * percentage))
 
-            # Log the calculation
-            from .logger import get_default_logger
-
-            logger = get_default_logger()
-            logger.info(
-                f"Auto-detected {optimal_workers} workers "
+            # Log the calculation - skip logging here to avoid circular imports
+            print(
+                f"INFO: Auto-detected {optimal_workers} workers "
                 f"({percentage * 100:.0f}% of {cpu_count} CPU cores)"
             )
 
@@ -302,19 +299,16 @@ class Config:
 
         except ImportError:
             # Fallback if psutil is not available
-            from .logger import get_default_logger
-
-            logger = get_default_logger()
-            logger.warning(
-                "psutil not available, using os.cpu_count() for worker calculation"
+            cpu_count = os.cpu_count() or 1
+            optimal_workers = max(1, int(cpu_count * 0.75))
+            print(
+                f"WARNING: psutil not available, using os.cpu_count() for worker calculation"
             )
             return os.cpu_count() or 1
         except Exception as e:
             # Fallback on any error
-            from .logger import get_default_logger
-
-            logger = get_default_logger()
-            logger.warning(f"Error calculating optimal workers: {e}. Using fallback.")
+            # Fallback on error
+            print("WARNING: Error calculating optimal workers. Using fallback.")
             return os.cpu_count() or 1
 
     def _validate(self) -> None:

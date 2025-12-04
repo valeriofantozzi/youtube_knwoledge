@@ -44,6 +44,28 @@ class ModelLoader:
         self.model: Optional[SentenceTransformer] = None
         self._model_info: Optional[dict] = None
     
+    def _resolve_device(self, device: str) -> str:
+        """
+        Resolve device string to a valid PyTorch device.
+        
+        Converts 'auto' to the best available device on the system.
+        
+        Args:
+            device: Device string ('auto', 'cpu', 'cuda', 'mps', etc.)
+            
+        Returns:
+            Valid PyTorch device string
+        """
+        if device == 'auto':
+            # Try to detect best device available
+            if torch.cuda.is_available():
+                return 'cuda'
+            elif torch.backends.mps.is_available():
+                return 'mps'
+            else:
+                return 'cpu'
+        return device
+    
     def load_model(self, enable_compilation: bool = True) -> SentenceTransformer:
         """
         Load the embedding model.
@@ -58,7 +80,10 @@ class ModelLoader:
             return self.model
         
         self.logger.info(f"Loading model: {self.model_name}")
-        self.logger.info(f"Device: {self.device}")
+        
+        # Resolve device to a valid PyTorch device
+        resolved_device = self._resolve_device(self.device)
+        self.logger.info(f"Device: {resolved_device}")
 
         try:
             # Configure PyTorch threads for optimal CPU utilization
@@ -74,7 +99,7 @@ class ModelLoader:
             self.model = SentenceTransformer(
                 self.model_name,
                 cache_folder=self.cache_dir,
-                device=self.device
+                device=resolved_device
             )
 
             # Set model to eval mode
