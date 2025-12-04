@@ -1,0 +1,179 @@
+# KnowBase Custom Configuration Template
+# Copy this file and customize for your use case
+
+config_name: "my_custom_config"
+description: "Custom configuration for specific use case"
+created_at: "2025-12-04"
+
+# ============================================================================
+# PREPROCESSING
+# ============================================================================
+preprocessing:
+  # Size of each text chunk
+  chunk_size: 512
+  # Overlap between consecutive chunks (for context preservation)
+  chunk_overlap: 50
+  # Minimum chunk size (discard smaller chunks)
+  min_chunk_size: 50
+  # Remove HTML tags from text
+  remove_html: true
+  # Normalize whitespace (multiple spaces → single space)
+  normalize_whitespace: true
+  # Remove special characters (keep only alphanumeric + spaces)
+  remove_special_chars: false
+  # Convert to lowercase
+  lowercase: false
+  # Language for text processing (affects stopwords removal, etc)
+  language: "en"
+
+# ============================================================================
+# EMBEDDING GENERATION
+# ============================================================================
+embedding:
+  # HuggingFace model name
+  # Options:
+  #   - "BAAI/bge-large-en-v1.5" (best quality, slower)
+  #   - "google/embeddinggemma-300m" (fast, good quality)
+  #   - Any other HF model supporting sentence-transformers
+  model_name: "BAAI/bge-large-en-v1.5"
+  
+  # Device for embeddings
+  # Options: "auto" (detect), "cpu", "cuda", "mps" (Apple Silicon)
+  device: "auto"
+  
+  # Batch size for processing
+  # Higher = faster but more memory. Lower = slower but less memory
+  batch_size: 32
+  
+  # HuggingFace cache directory
+  cache_dir: "~/.cache/huggingface"
+  
+  # Cache model to disk
+  model_cache_enabled: true
+  
+  # Model precision: "fp32" (full), "fp16" (half), "bf16" (bfloat16)
+  precision: "fp32"
+
+# ============================================================================
+# VECTOR STORE (ChromaDB)
+# ============================================================================
+vector_store:
+  # Path to ChromaDB directory
+  db_path: "./data/vector_db"
+  # Collection name (can have multiple collections per model)
+  collection_name: "documents"
+  # Distance metric: "cosine", "l2", "ip" (inner product)
+  distance_metric: "cosine"
+  # Persist to disk
+  persist_directory: true
+
+# ============================================================================
+# RETRIEVAL / SEARCH
+# ============================================================================
+retrieval:
+  # Number of results to return
+  top_k: 5
+  # Minimum similarity score (0.0 = no filter)
+  similarity_threshold: 0.0
+  # Re-rank results with a different model
+  rerank_enabled: false
+  rerank_model: null
+  # Metadata filters (empty = no filtering)
+  # Example: {"source": "document_1.pdf", "year": "2023"}
+  filter_by_metadata: {}
+
+# ============================================================================
+# AI SEARCH / RAG
+# ============================================================================
+ai_search:
+  # Enable RAG/AI Search
+  enabled: true
+  
+  # LLM Provider
+  # Options: "openai", "anthropic", "groq", "azure", "ollama"
+  llm_provider: "openai"
+  
+  # Model name (depends on provider)
+  # OpenAI: "gpt-4-mini", "gpt-4", "gpt-3.5-turbo"
+  # Anthropic: "claude-3-5-sonnet", "claude-3-opus", "claude-3-haiku"
+  # Groq: "mixtral-8x7b-32768", "llama2-70b-4096"
+  # Ollama: "mistral", "neural-chat", etc. (local)
+  llm_model: "gpt-4-mini"
+  
+  # Model temperature (creativity) 0.0-2.0
+  # 0.0 = deterministic, 1.0 = balanced, 2.0 = very creative
+  llm_temperature: 0.7
+  
+  # Max tokens in response
+  llm_max_tokens: 2000
+  
+  # API key (if not set, will try env vars: OPENAI_API_KEY, etc)
+  llm_api_key: null
+  
+  # Analyze query clarity and intent
+  query_analyzer_enabled: true
+  # Threshold for query clarity (0.0-1.0)
+  query_clarity_threshold: 0.85
+  
+  # Rewrite query for better retrieval
+  query_rewriter_enabled: true
+  
+  # Ask for clarification if query is ambiguous
+  clarification_enabled: true
+  
+  # Number of previous messages to keep in context
+  conversation_window: 10
+  
+  # Display reasoning/thinking process
+  show_thinking: true
+
+# ============================================================================
+# CLUSTERING / ANALYSIS
+# ============================================================================
+clustering:
+  # Enable clustering
+  enabled: true
+  # Minimum cluster size for HDBSCAN
+  min_cluster_size: 5
+  # Minimum samples for HDBSCAN
+  min_samples: 5
+  # Distance metric: "euclidean", "cosine", "manhattan"
+  clustering_metric: "cosine"
+  # Use UMAP for dimensionality reduction
+  use_umap: true
+  # Number of neighbors for UMAP
+  umap_n_neighbors: 15
+  # Minimum distance for UMAP
+  umap_min_dist: 0.1
+  # Dimensions for UMAP projection (2 or 3)
+  umap_n_components: 3
+
+# ============================================================================
+# PIPELINE EXECUTION
+# ============================================================================
+pipeline:
+  # Which pipelines to run
+  run_preprocessing: true
+  run_embedding: true
+  run_indexing: true
+  run_retrieval: false
+  run_ai_search: false
+  run_clustering: false
+  
+  # Skip already processed documents
+  skip_existing: false
+  
+  # Save intermediate results
+  save_intermediate: false
+  
+  # Enable parallel processing
+  parallel_processing: true
+  
+  # Number of workers (-1 = auto-detect cores)
+  num_workers: -1
+  
+  # Verbose output
+  verbose: false
+  
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  log_level: "INFO"

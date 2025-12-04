@@ -1,0 +1,82 @@
+# KnowBase Full Pipeline Configuration
+# This configuration runs the complete pipeline: preprocessing → embeddings → indexing
+
+config_name: "full_pipeline_default"
+description: "Complete pipeline with default settings for all stages"
+created_at: "2025-12-04"
+
+# Preprocessing configuration
+preprocessing:
+  chunk_size: 512
+  chunk_overlap: 50
+  min_chunk_size: 50
+  remove_html: true
+  normalize_whitespace: true
+  remove_special_chars: false
+  lowercase: false
+  language: "en"
+
+# Embedding generation configuration
+embedding:
+  model_name: "BAAI/bge-large-en-v1.5"
+  device: "auto"  # auto-detect (cpu, cuda, mps)
+  batch_size: 32
+  cache_dir: "~/.cache/huggingface"
+  model_cache_enabled: true
+  precision: "fp32"
+
+# Vector store (ChromaDB) configuration
+vector_store:
+  db_path: "./data/vector_db"
+  collection_name: "documents"
+  distance_metric: "cosine"
+  persist_directory: true
+
+# Retrieval configuration (for search)
+retrieval:
+  top_k: 5
+  similarity_threshold: 0.0
+  rerank_enabled: false
+  rerank_model: null
+  filter_by_metadata: {}
+
+# AI Search / RAG configuration
+ai_search:
+  enabled: false  # Disabled in full_pipeline (run separately)
+  llm_provider: "openai"
+  llm_model: "gpt-4-mini"
+  llm_temperature: 0.7
+  llm_max_tokens: 2000
+  llm_api_key: null  # Will be loaded from env vars
+  query_analyzer_enabled: true
+  query_clarity_threshold: 0.85
+  query_rewriter_enabled: true
+  clarification_enabled: true
+  conversation_window: 10
+  show_thinking: true
+
+# Clustering configuration
+clustering:
+  enabled: false  # Not needed for indexing pipeline
+  min_cluster_size: 5
+  min_samples: 5
+  clustering_metric: "cosine"
+  use_umap: true
+  umap_n_neighbors: 15
+  umap_min_dist: 0.1
+  umap_n_components: 3
+
+# Pipeline execution settings
+pipeline:
+  run_preprocessing: true
+  run_embedding: true
+  run_indexing: true
+  run_retrieval: false
+  run_ai_search: false
+  run_clustering: false
+  skip_existing: false
+  save_intermediate: false
+  parallel_processing: true
+  num_workers: -1
+  verbose: false
+  log_level: "INFO"

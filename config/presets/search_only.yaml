@@ -1,0 +1,77 @@
+# KnowBase Search-Only Configuration
+# Use this when documents are already indexed and you only need to search
+
+config_name: "search_only"
+description: "Only semantic search retrieval (skip indexing)"
+created_at: "2025-12-04"
+
+preprocessing:
+  chunk_size: 512
+  chunk_overlap: 50
+  min_chunk_size: 50
+  remove_html: true
+  normalize_whitespace: true
+  remove_special_chars: false
+  lowercase: false
+  language: "en"
+
+embedding:
+  model_name: "BAAI/bge-large-en-v1.5"
+  device: "auto"
+  batch_size: 32
+  cache_dir: "~/.cache/huggingface"
+  model_cache_enabled: true
+  precision: "fp32"
+
+vector_store:
+  db_path: "./data/vector_db"
+  collection_name: "documents"
+  distance_metric: "cosine"
+  persist_directory: true
+
+# Search settings - optimize for retrieval
+retrieval:
+  top_k: 5
+  similarity_threshold: 0.3
+  rerank_enabled: false
+  rerank_model: null
+  filter_by_metadata: {}
+
+ai_search:
+  enabled: false
+  llm_provider: "openai"
+  llm_model: "gpt-4-mini"
+  llm_temperature: 0.7
+  llm_max_tokens: 2000
+  llm_api_key: null
+  query_analyzer_enabled: true
+  query_clarity_threshold: 0.85
+  query_rewriter_enabled: true
+  clarification_enabled: true
+  conversation_window: 10
+  show_thinking: true
+
+clustering:
+  enabled: false
+  min_cluster_size: 5
+  min_samples: 5
+  clustering_metric: "cosine"
+  use_umap: true
+  umap_n_neighbors: 15
+  umap_min_dist: 0.1
+  umap_n_components: 3
+
+# KEY DIFFERENCE: Only run retrieval
+pipeline:
+  run_preprocessing: false
+  run_embedding: false
+  run_indexing: false
+  run_retrieval: true   # ← RUN ONLY THIS
+  run_ai_search: false
+  run_clustering: false
+  skip_existing: false
+  save_intermediate: false
+  parallel_processing: true
+  num_workers: -1
+  verbose: false
+  log_level: "INFO"
