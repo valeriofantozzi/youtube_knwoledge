@@ -29,6 +29,10 @@ from src.cli.utils.output import (
 from src.cli.commands.load import load
 from src.cli.commands.search import search
 from src.cli.commands.info import info
+from src.cli.commands.ask import ask
+from src.cli.commands.cluster import cluster
+from src.cli.commands.export import export
+from src.cli.commands.reindex import reindex
 
 __version__ = "0.1.0"
 
@@ -146,6 +150,10 @@ def hello(ctx: CLIContext) -> None:
 cli.add_command(load)
 cli.add_command(search)
 cli.add_command(info)
+cli.add_command(ask)
+cli.add_command(cluster)
+cli.add_command(export)
+cli.add_command(reindex)
 
 
 def main() -> None:
