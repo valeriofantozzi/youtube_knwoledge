@@ -1,178 +1,70 @@
-# KnowBase - Document Embedding & Retrieval System
+# 🧠 KnowBase — ricerca semantica immersiva per documenti
 
-A semantic search system for document knowledge bases that enables natural language queries over various document types using multiple state-of-the-art embedding models.
+Un toolkit pratico e immediato per trasformare raccolte di documenti (SRT, PDF, TXT, Markdown...) in una knowledge base ricercabile semanticamente. Usa modelli di embedding diversi, collezioni isolate per modello e una UI web integrata per esplorare i risultati.
 
-## Overview
+Per sviluppatori e power users: semplice da estendere, pensato per testare modelli e pipeline diverse senza rompere gli indici esistenti.
 
-KnowBase processes documents (including SRT subtitles, PDFs, text files, and more), generates high-quality embeddings using configurable embedding models, and stores them in a local ChromaDB vector database for fast semantic search. Supports multiple embedding models including BGE-large-en-v1.5 and EmbeddingGemma-300m.
+**✨ Highlights**
 
-## Features
+- 🤖 **Multi-model**: supporto per `BAAI/bge-large-en-v1.5` e `google/embeddinggemma-300m` (e altri tramite adapter)
+- 🔐 **Collezioni isolate**: ogni modello scrive in collezioni separate in ChromaDB
+- 🔄 **Pipeline modulare**: parsing → chunking → embeddings → store → retrieval
+- 🎛️ **Interfacce**: script CLI per batch, API programmatica e interfaccia Streamlit per esplorazione
 
-- **Preprocessing Pipeline**: Parse documents (SRT, PDF, text, markdown), clean text, and create semantic chunks
-- **Multi-Model Embedding**: Choose from multiple state-of-the-art embedding models (BGE, EmbeddingGemma, and extensible to others)
-- **Dynamic Model Switching**: Switch between models at runtime with intelligent caching
-- **Model-Specific Collections**: Automatic isolation of embeddings by model to prevent conflicts
-- **Adaptive Dimensions**: Support for different embedding dimensions (1024 for BGE, 768 for EmbeddingGemma with MRL support)
-- **Vector Storage**: Store embeddings with rich metadata in ChromaDB
-- **Semantic Search**: Query document content using natural language
-- **CLI Interface**: Command-line tools for processing and querying with model selection
-- **Web Interface**: Streamlit app for interactive search with model selection
+**⚡ Pronto per prototipi e sperimentazione**: caching dei modelli, selezione dinamica del device (CPU, CUDA, MPS), e helper per confronto di qualità tra modelli.
 
-## Technology Stack
+**🚀 Quick TL;DR (esempio rapido)**
 
-- **Language**: Python 3.9+
-- **Embedding Models**:
-  - BAAI/bge-large-en-v1.5 (1024-dim, instruction-tuned)
-  - Google/embeddinggemma-300m (768-dim with MRL, structured prompts)
-  - Extensible adapter system for additional models
-- **Vector Database**: ChromaDB (local, persistent, model-isolated collections)
-- **Deep Learning**: PyTorch (with CUDA/MPS support)
-- **Model Management**: Intelligent caching and memory management
-
-## Quick Start
-
-### Installation
-
-1. Clone the repository
-2. Create a virtual environment:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-### Usage
-
-1. Process document files (default BGE model):
-   ```bash
-   python scripts/process_subtitles.py --input documents/
-   ```
-
-2. Process with specific model:
-   ```bash
-   # Use EmbeddingGemma model
-   python scripts/process_subtitles.py --input documents/ --model "google/embeddinggemma-300m"
-
-   # Use BGE model explicitly
-   python scripts/process_subtitles.py --input documents/ --model "BAAI/bge-large-en-v1.5"
-   ```
-
-3. Query the indexed content:
-   ```bash
-   python scripts/query_subtitles.py "your search query"
-   ```
-
-4. Launch web interface for interactive search:
-   ```bash
-   ./start_viewer.sh
-   ```
-
-## Project Structure
+1. 📦 Crea e attiva un virtualenv:
 
 ```
-project_root/
-├── src/                    # Source code
-│   ├── preprocessing/      # Document parsing, text cleaning, chunking
-│   ├── embeddings/         # Multi-model embedding system
-│   │   ├── adapters/       # Model-specific adapters (BGE, EmbeddingGemma)
-│   │   ├── model_loader.py # Model loading with adapter pattern
-│   │   ├── model_registry.py # Centralized model metadata & adapters
-│   │   ├── model_manager.py # Multi-model caching & management
-│   │   └── pipeline.py     # Embedding generation pipeline
-│   ├── vector_store/       # ChromaDB management, model-isolated collections
-│   ├── retrieval/          # Query engine, similarity search
-│   └── utils/              # Configuration, logging, utilities
-├── scripts/                # CLI scripts (with --model support)
-├── data/                   # Data directories
-│   ├── raw/               # Original document files
-│   ├── processed/         # Processed chunks
-│   └── vector_db/        # ChromaDB storage (model-specific collections)
-├── docs/                   # Documentation
-│   └── model_selection_guide.md # Detailed model comparison guide
-├── tests/                 # Test suite (unit & integration)
-└── streamlit_app.py       # Web interface with model selection
+python -m venv .venv
+source .venv/bin/activate
 ```
 
-## Model Selection
+2. 📥 Installa dipendenze:
 
-This system supports multiple embedding models with different characteristics:
-
-### Supported Models
-
-| Model | Dimensions | Max Length | Precision | Use Case |
-|-------|------------|------------|-----------|----------|
-| `BAAI/bge-large-en-v1.5` | 1024 | 512 | float32, float16 | General purpose, high quality |
-| `google/embeddinggemma-300m` | 768 (MRL: 512, 256, 128) | 2048 | float32, bfloat16 | Long contexts, flexible dimensions |
-
-### Model Configuration
-
-#### Environment Variable
-Set the default model in your `.env` file:
-```bash
-MODEL_NAME=BAAI/bge-large-en-v1.5
-# or
-MODEL_NAME=google/embeddinggemma-300m
+```
+pip install -r requirements.txt
 ```
 
-#### CLI Usage
-Override the default model for specific operations:
-```bash
-# Processing with BGE
-python scripts/process_subtitles.py --input documents/ --model "BAAI/bge-large-en-v1.5"
+3. ⚙️ Processa file (default model impostato in `.env`):
 
-# Processing with EmbeddingGemma
-python scripts/process_subtitles.py --input documents/ --model "google/embeddinggemma-300m"
+```
+python scripts/process_subtitles.py --input subtitles/ --output data/processed
 ```
 
-#### Programmatic Usage
-```python
-from src.embeddings.pipeline import EmbeddingPipeline
+4. 🔍 Cerca nei dati indicizzati:
 
-# Use BGE model
-bge_pipeline = EmbeddingPipeline(model_name="BAAI/bge-large-en-v1.5")
-
-# Use EmbeddingGemma model
-gemma_pipeline = EmbeddingPipeline(model_name="google/embeddinggemma-300m")
+```
+python scripts/query_subtitles.py "come potrei rinvasare un'orchidea?"
 ```
 
-### Collection Management
+5. 🌐 Avvia la UI:
 
-Each model stores embeddings in separate ChromaDB collections to prevent conflicts:
-
-- **BGE collections**: `document_embeddings_bge_large`
-- **EmbeddingGemma collections**: `document_embeddings_gemma_300m`
-
-Collections are automatically created and managed based on the selected model.
-
-### Model Switching
-
-The system supports dynamic model switching with intelligent caching:
-
-- Models are cached in memory to avoid reloading
-- Automatic cleanup of unused models to manage memory
-- Seamless switching between models in the web interface
-
-## Configuration
-
-Copy `.env.example` to `.env` and configure as needed:
-
-```bash
-cp .env.example .env
+```
+./start_viewer.sh
 ```
 
-Available configuration options:
-- `MODEL_NAME`: Default embedding model
-- `DEVICE`: Computation device (cpu/cuda/auto)
-- `MODEL_CACHE_DIR`: Cache directory for downloaded models
+**💡 Perché è figa?**
 
-## License
+- ⚡ Cambio modello al volo: puoi confrontare embedding di modelli diversi senza mescolare i dati.
+- 🔌 Facilmente estendibile: il pattern a adapter rende l'aggiunta di un nuovo modello minimale.
+- ⏱️ Pensato per SRT e documenti con contesto temporale (subtitle-aware chunking).
 
-[Add your license here]
+**📁 Struttura chiave del repository**
 
-## Contributing
+- 🧠 `src/embeddings/` — adapter, loader e pipeline per generare embeddings.
+- 🔤 `src/preprocessing/` — parser per SRT, chunker, normalizzazione testo.
+- 🗄️ `src/vector_store/` — gestione ChromaDB, naming per collezioni model-specific.
+- 🛠️ `scripts/` — script CLI per processare, migrare e interrogare il DB.
+- 🎨 `streamlit_app.py` — interfaccia web per esplorare ricerche e cambiare modello.
 
-[Add contribution guidelines here]
+**📌 Scorci pratici**
 
+- 📚 Collezioni:
+  - BGE: `document_embeddings_bge_large`
+  - Gemma: `document_embeddings_gemma_300m`
+- 📄 File utili: `requirements.txt`, `start_viewer.sh`, `scripts/process_subtitles.py`
+
+📖 Vuoi andare oltre? Apri `USER_GUIDE.md` per istruzioni tecniche dettagliate, esempi di CLI e snippet per usare le pipeline dal codice Python.
