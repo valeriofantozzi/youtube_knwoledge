@@ -6,7 +6,7 @@ Provides styled search result cards with similarity scores and highlighting.
 
 import streamlit as st
 import re
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 from ..theme import get_score_color, get_score_label
 
 
@@ -65,6 +65,60 @@ def highlight_query_terms(text: str, query: str) -> str:
             highlighted = pattern.sub(f"**{term}**", highlighted)
     
     return highlighted
+
+
+def get_full_document(source_id: str, current_chunk_index: int, current_chunk_text: str) -> Tuple[str, str, List[Tuple[int, str]]]:
+    """
+    Retrieve the full document by reconstructing it from all chunks in the database.
+    
+    Args:
+        source_id: Source document ID
+        current_chunk_index: Index of the current chunk
+        current_chunk_text: Text of the current chunk
+    
+    Returns:
+        Tuple of (reconstructed_document_text, filename, list of (chunk_index, chunk_text) tuples)
+    """
+    if "collection" not in st.session_state or st.session_state.collection is None:
+        return "", "", []
+    
+    try:
+        collection = st.session_state.collection
+        
+        # Get all chunks from this source document
+        all_chunks = collection.get(
+            where={"source_id": {"$eq": source_id}},
+            include=["documents", "metadatas"]
+        )
+        
+        if not all_chunks.get("metadatas"):
+            return "", "", []
+        
+        # Get filename from first chunk metadata
+        filename = ""
+        if all_chunks["metadatas"]:
+            filename = all_chunks["metadatas"][0].get("filename", "")
+        
+        # Extract and sort chunks by index
+        chunks_with_index = []
+        for i, meta in enumerate(all_chunks.get("metadatas", [])):
+            if meta and "chunk_index" in meta:
+                chunk_idx = int(meta["chunk_index"])
+                doc_text = all_chunks.get("documents", [])[i]
+                if doc_text:
+                    chunks_with_index.append((chunk_idx, doc_text))
+        
+        # Sort by chunk index
+        chunks_with_index.sort(key=lambda x: x[0])
+        
+        # Reconstruct full document from chunks
+        full_text = "\n\n".join([text for _, text in chunks_with_index])
+        
+        return full_text, filename, chunks_with_index
+        
+    except Exception as e:
+        st.error(f"Error retrieving full document: {e}")
+        return "", "", []
 
 
 def render_result_card(
@@ -140,8 +194,42 @@ def render_result_card(
         # Show full text if expanded
         if st.session_state.get(f"expand_{rank}", False):
             st.markdown("---")
-            st.markdown("**Full Text:**")
-            st.write(text)
+            st.markdown("**📄 Full Original Document:**")
+            
+            # Try to get the full document
+            if source_id and source_id != "N/A" and chunk_index != "N/A":
+                original_doc, filename, chunks = get_full_document(source_id, int(chunk_index), text)
+                
+                if original_doc:
+                    # Try to find and highlight the current chunk in the original document
+                    # Clean the chunk text for better matching
+                    clean_chunk = text.strip()
+                    
+                    # Try to find the chunk in the original document
+                    if clean_chunk in original_doc:
+                        # Split the document around the chunk and highlight it
+                        parts = original_doc.split(clean_chunk, 1)
+                        if len(parts) == 2:
+                            before, after = parts
+                            st.markdown(before)
+                            st.markdown(f"**{clean_chunk}**")
+                            st.markdown(after)
+                        else:
+                            st.markdown(original_doc)
+                    else:
+                        # If exact match not found, show the full document
+                        st.markdown(original_doc)
+                        st.info("💡 Current chunk highlighted separately below:")
+                        st.markdown(f"**Current chunk:** {text}")
+                    
+                    # Show document stats
+                    st.caption(f"📊 Document reconstructed from {len(chunks)} chunks • Original file: `{filename}`")
+                else:
+                    # Fallback to just the current chunk
+                    st.write(text)
+            else:
+                # Fallback to just the current chunk
+                st.write(text)
 
 
 def render_result_list(

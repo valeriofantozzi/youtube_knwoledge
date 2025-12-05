@@ -23,6 +23,7 @@ from ..components.result_card import (
     render_result_card,
     score_bar,
     highlight_query_terms,
+    get_full_document,
 )
 
 
@@ -418,8 +419,42 @@ def render_search_result_card(rank: int, result: Dict, query: str) -> None:
         # Expanded full text
         if st.session_state.get(f"expand_result_{rank}", False):
             st.markdown("---")
-            st.markdown("**Full Text:**")
-            st.write(text)
+            st.markdown("**📄 Full Original Document:**")
+            
+            # Try to get the full document
+            if source_id and source_id != "N/A" and chunk_index != "N/A":
+                original_doc, filename, chunks = get_full_document(source_id, int(chunk_index), text)
+                
+                if original_doc:
+                    # Try to find and highlight the current chunk in the original document
+                    # Clean the chunk text for better matching
+                    clean_chunk = text.strip()
+                    
+                    # Try to find the chunk in the original document
+                    if clean_chunk in original_doc:
+                        # Split the document around the chunk and highlight it
+                        parts = original_doc.split(clean_chunk, 1)
+                        if len(parts) == 2:
+                            before, after = parts
+                            st.markdown(before)
+                            st.markdown(f"**{clean_chunk}**")
+                            st.markdown(after)
+                        else:
+                            st.markdown(original_doc)
+                    else:
+                        # If exact match not found, show the full document
+                        st.markdown(original_doc)
+                        st.info("💡 Current chunk highlighted separately below:")
+                        st.markdown(f"**Current chunk:** {text}")
+                    
+                    # Show document stats
+                    st.caption(f"📊 Document reconstructed from {len(chunks)} chunks • Original file: `{filename}`")
+                else:
+                    # Fallback to just the current chunk
+                    st.write(text)
+            else:
+                # Fallback to just the current chunk
+                st.write(text)
 
 
 def export_results(results: List[Dict], query: str) -> None:
