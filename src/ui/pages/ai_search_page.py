@@ -32,29 +32,64 @@ def view_document(filename, score, text, metadata):
 
 def render_sources_carousel(documents):
     """
-    Render retrieved documents using Streamlit native components.
+    Render retrieved documents in a horizontal scrollable carousel using styled buttons.
     """
     if not documents:
         return
     
-    # Add custom CSS for fixed button dimensions
+    # st.markdown("### 📚 Sources")
+    
+    # Custom CSS for horizontal scrolling and styled buttons
     st.markdown(
         """
         <style>
-        .source-btn button {
-            height: 60px !important;
-            min-height: 60px !important;
+        /* Force horizontal scrolling for the columns container */
+        div[data-testid="stHorizontalBlock"] {
+            overflow-x: auto;
+            flex-wrap: nowrap !important;
+            padding-bottom: 10px; /* Space for scrollbar */
+        }
+        
+        /* Force minimum width for each column to ensure they don't shrink */
+        div[data-testid="stColumn"] {
+            min-width: 220px !important;
+            flex: 0 0 auto !important; /* Don't grow or shrink */
+        }
+
+        /* Styled Buttons */
+        div[data-testid="stColumn"] button {
+            height: auto !important;
+            min-height: 70px !important;
+            padding: 10px !important;
+            text-align: left !important;
+            display: block !important;
+            width: 100% !important;
+            white-space: pre-wrap !important;
+            line-height: 1.4 !important;
+            border: 1px solid #e0e0e0 !important;
+            background-color: #f8f9fa !important;
+        }
+
+        div[data-testid="stColumn"] button:hover {
+            border-color: #FF4B4B !important;
+            background-color: #fff !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+        }
+        
+        div[data-testid="stColumn"] button p {
+            font-size: 0.9rem !important;
         }
         </style>
         """,
         unsafe_allow_html=True
     )
-    
+
+    # Create a single row with one column per document
     cols = st.columns(len(documents))
-    
+
     for col, doc in zip(cols, documents):
         with col:
-            # Handle both object and dict access
+            # Normalize doc attributes
             if isinstance(doc, dict):
                 text = doc.get("text", "")
                 score = doc.get("similarity_score", 0)
@@ -67,22 +102,23 @@ def render_sources_carousel(documents):
                 filename = getattr(metadata, "filename", "Unknown")
 
             score_display = f"{score:.2f}" if score is not None else "N/A"
+            safe_score = score if score is not None else 0.0
             
-            # Determine icon based on score
-            if score is not None and score >= 0.7:
-                score_icon = "🟢"
-            elif score is not None and score >= 0.4:
-                score_icon = "🟡"
+            # Determine icon
+            if safe_score >= 0.7:
+                icon = "🟢"
+            elif safe_score >= 0.4:
+                icon = "🟡" 
             else:
-                score_icon = "🔴"
+                icon = "🔴"
+
+            truncated_filename = filename if len(filename) <= 20 else filename[:17] + "..."
             
-            # Combine score and filename in one button
-            truncated_filename = filename if len(filename) <= 40 else filename[:30] + "..."
-            label = f"{score_icon} {truncated_filename}"
-            st.markdown(f'<div class="source-btn">', unsafe_allow_html=True)
-            if st.button(label, key=f"btn_{id(doc)}", help=filename, use_container_width=True):
+            # Button Label: Icon + Filename \n Score
+            label = f"📄 {truncated_filename}\n{icon} Score: {score_display}"
+            
+            if st.button(label, key=f"view_{id(doc)}", use_container_width=True):
                 view_document(filename, score_display, text, metadata)
-            st.markdown('</div>', unsafe_allow_html=True)
 
 def render_ai_search_page():
     """
@@ -190,6 +226,11 @@ def render_ai_search_page():
                 })
                 
                 # Collect all updates as we stream
+                # Initialize variables to capture state across steps
+                answer = ""
+                documents = []
+                query_analysis = {}
+                needs_clarification = False
                 thinking_updates = []
                 response = {}
                 
@@ -206,22 +247,25 @@ def render_ai_search_page():
                                 # Update display with latest thinking status
                                 with thinking_placeholder.container():
                                     render_thinking_status_simple(thinking_updates)
+                        
+                        # Capture other state updates as they happen
+                        if "documents" in node_state and node_state["documents"]:
+                            documents = node_state["documents"]
+                        
+                        if "query_analysis" in node_state and node_state["query_analysis"]:
+                            query_analysis = node_state["query_analysis"]
+                            
+                        if "needs_clarification" in node_state:
+                            needs_clarification = node_state["needs_clarification"]
+                            
+                        if "generation" in node_state:
+                            answer = node_state["generation"]
                     
                     response = chunk
                 
-                # Extract final response from last chunk
-                # The last chunk should contain the final state
-                if response:
-                    last_node_state = next(iter(response.values())) if response else {}
-                    answer = last_node_state.get("generation", "I couldn't generate an answer.")
-                    documents = last_node_state.get("documents", [])
-                    needs_clarification = last_node_state.get("needs_clarification", False)
-                    query_analysis = last_node_state.get("query_analysis", {})
-                else:
+                # If no answer was generated yet (e.g. error or empty), set default
+                if not answer:
                     answer = "I couldn't generate an answer."
-                    documents = []
-                    needs_clarification = False
-                    query_analysis = {}
                 
                 # Display answer
                 message_placeholder.markdown(answer)
