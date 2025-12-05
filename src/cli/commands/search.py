@@ -121,12 +121,38 @@ def search(
             # Use system default config, not Pydantic defaults
             system_config = get_config()
             complete_config = get_preset_config("search_only")
-            # Override vector store config with system defaults (collection/db path)
-            complete_config.vector_store.db_path = system_config.VECTOR_DB_PATH
+            
+            # Get active database path
+            try:
+                from src.utils.db_manager import get_db_manager
+                db_manager = get_db_manager()
+                complete_config.vector_store.db_path = str(db_manager.get_db_path())
+            except Exception as e:
+                if verbose:
+                    print_warning(f"Could not resolve active database path: {e}")
+                complete_config.vector_store.db_path = system_config.VECTOR_DB_PATH
+            
             complete_config.vector_store.collection_name = system_config.COLLECTION_NAME
-            # Update embedding model if specified, else use Pydantic default (BAAI)
-            if model:
-                complete_config.embedding.model_name = model  # type: ignore
+            
+            # Auto-detect model from database if not explicitly specified
+            if model == "BAAI/bge-large-en-v1.5":  # Default value, user didn't specify
+                try:
+                    temp_chroma = ChromaDBManager(db_path=complete_config.vector_store.db_path)
+                    detected_model = temp_chroma.auto_detect_model()
+                    if detected_model:
+                        if verbose:
+                            print_success(f"Auto-detected embedding model: {detected_model}")
+                        complete_config.embedding.model_name = detected_model
+                    else:
+                        # No model detected, use default
+                        complete_config.embedding.model_name = model
+                except Exception as e:
+                    if verbose:
+                        print_warning(f"Could not auto-detect model: {e}, using default")
+                    complete_config.embedding.model_name = model
+            else:
+                # User explicitly specified a model
+                complete_config.embedding.model_name = model
 
         # Get configurations
         emb_cfg = complete_config.embedding

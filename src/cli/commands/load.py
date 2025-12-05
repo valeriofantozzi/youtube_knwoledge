@@ -136,6 +136,16 @@ def load(
         else:
             # Create config from CLI options
             complete_config = get_preset_config("full_pipeline")
+            
+            # Set active database path
+            try:
+                from src.utils.db_manager import get_db_manager
+                db_manager = get_db_manager()
+                complete_config.vector_store.db_path = str(db_manager.get_db_path())
+            except Exception as e:
+                if verbose:
+                    print_warning(f"Could not resolve active database path: {e}")
+
             # Update with CLI options
             complete_config.embedding.model_name = model
             complete_config.embedding.device = device  # type: ignore
@@ -172,6 +182,7 @@ def load(
             enable_optimizations=True,
         )
         vector_store_pipeline = VectorStorePipeline(
+            db_path=str(vs_cfg.db_path) if hasattr(vs_cfg, 'db_path') else None,
             model_name=emb_cfg.model_name
         )
 

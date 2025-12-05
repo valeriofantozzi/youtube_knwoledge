@@ -99,20 +99,33 @@ class SimilaritySearch:
         Args:
             chroma_manager: ChromaDBManager instance (creates new if None)
             embedder: Embedder instance (creates new if None)
-            model_name: Embedding model name (uses config default if None)
+            model_name: Embedding model name (auto-detects if None)
         """
+        self.logger = get_default_logger()
         self.chroma_manager = chroma_manager or ChromaDBManager()
-        self.embedder = embedder or Embedder()
         
-        # Use configured model name if not provided
+        # Auto-detect model from database if not provided
         if model_name is None:
-            config = get_config()
-            self.model_name = config.MODEL_NAME
+            detected_model = self.chroma_manager.auto_detect_model()
+            if detected_model:
+                self.model_name = detected_model
+                self.logger.info(f"Auto-detected embedding model: {detected_model}")
+            else:
+                # Fallback to config default
+                config = get_config()
+                self.model_name = config.MODEL_NAME
+                self.logger.debug(f"No model auto-detected, using config default: {self.model_name}")
         else:
             self.model_name = model_name
+        
+        # Initialize embedder with the detected/provided model
+        if embedder is None:
+            from ..embeddings.model_loader import get_model_loader
+            model_loader = get_model_loader(model_name=self.model_name)
+            self.embedder = Embedder(model_loader=model_loader)
+        else:
+            self.embedder = embedder
             
-        self.logger = get_default_logger()
-
         # Ensure collection is initialized
         self._collection = None
     

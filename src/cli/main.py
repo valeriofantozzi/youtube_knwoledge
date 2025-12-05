@@ -33,6 +33,7 @@ from src.cli.commands.ask import ask
 from src.cli.commands.cluster import cluster
 from src.cli.commands.export import export
 from src.cli.commands.reindex import reindex
+from src.cli.commands.db import db_group
 
 __version__ = "0.1.0"
 
@@ -154,6 +155,7 @@ cli.add_command(ask)
 cli.add_command(cluster)
 cli.add_command(export)
 cli.add_command(reindex)
+cli.add_command(db_group)
 
 
 def main() -> None:

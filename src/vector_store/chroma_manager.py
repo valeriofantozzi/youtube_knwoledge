@@ -435,6 +435,60 @@ class ChromaDBManager:
                 model_collections.setdefault("unknown", []).append(collection_name)
 
         return model_collections
+    
+    def auto_detect_model(self) -> Optional[str]:
+        """
+        Auto-detect the embedding model from available collections.
+        
+        Returns the model name from the first non-empty collection found.
+        Prioritizes collections with more documents.
+        
+        Returns:
+            Model name if found, None otherwise
+        """
+        try:
+            collections = self.list_collections()
+            if not collections:
+                self.logger.debug("No collections found for auto-detection")
+                return None
+            
+            # Get collection stats and sort by count
+            collection_stats = []
+            for collection_name in collections:
+                try:
+                    collection = self.get_client().get_collection(name=collection_name)
+                    count = collection.count()
+                    metadata = collection.metadata or {}
+                    model_name = metadata.get("model_name")
+                    
+                    if model_name and count > 0:
+                        collection_stats.append({
+                            "name": collection_name,
+                            "model": model_name,
+                            "count": count
+                        })
+                except Exception as e:
+                    self.logger.debug(f"Could not check collection {collection_name}: {e}")
+                    continue
+            
+            if not collection_stats:
+                self.logger.debug("No non-empty collections with model metadata found")
+                return None
+            
+            # Sort by count (descending) and get the model from the largest collection
+            collection_stats.sort(key=lambda x: x["count"], reverse=True)
+            detected_model = collection_stats[0]["model"]
+            
+            self.logger.info(
+                f"Auto-detected model '{detected_model}' from collection '{collection_stats[0]['name']}' "
+                f"({collection_stats[0]['count']} documents)"
+            )
+            
+            return detected_model
+            
+        except Exception as e:
+            self.logger.error(f"Failed to auto-detect model: {e}")
+            return None
 
     def get_collection_for_model(self, model_name: str) -> chromadb.Collection:
         """

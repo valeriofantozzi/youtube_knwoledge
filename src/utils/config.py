@@ -149,7 +149,16 @@ class Config:
         self.MIN_CHUNK_SIZE = self._get_int("MIN_CHUNK_SIZE", 50)
 
         # Vector Database Configuration
-        self.VECTOR_DB_PATH = os.getenv("VECTOR_DB_PATH", "./data/vector_db")
+        # Use DatabaseManager to resolve path, but allow env var override
+        try:
+            from .db_manager import get_db_manager
+            db_manager = get_db_manager()
+            default_db_path = str(db_manager.get_db_path())
+        except Exception as e:
+            # Fallback if db_manager fails (e.g. during circular import or setup)
+            default_db_path = "./data/vector_db"
+            
+        self.VECTOR_DB_PATH = os.getenv("VECTOR_DB_PATH", default_db_path)
         self.COLLECTION_NAME = os.getenv("COLLECTION_NAME", "document_embeddings")
 
         # Device Configuration

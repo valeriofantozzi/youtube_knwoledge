@@ -27,6 +27,8 @@ from src.ui.pages import (
     render_ai_search_page,
 )
 from src.vector_store.chroma_manager import ChromaDBManager
+from src.utils.db_manager import get_db_manager
+from src.utils.config import reset_config
 
 
 # Page configuration
@@ -108,6 +110,63 @@ def render_sidebar() -> str:
         label_visibility="collapsed",
         key="nav_radio",
     )
+
+    st.sidebar.markdown("---")
+
+    # Database Selection
+    st.sidebar.markdown(f"**🗄️ Database**")
+    db_manager = get_db_manager()
+    databases = db_manager.list_databases()
+    current_db = db_manager.get_active_database()
+    
+    # Ensure current_db is in the list
+    if current_db not in databases and databases:
+        current_db = databases[0]
+        
+    selected_db = st.sidebar.selectbox(
+        "Select Database",
+        options=databases,
+        index=databases.index(current_db) if current_db in databases else 0,
+        label_visibility="collapsed"
+    )
+    
+    if selected_db != current_db:
+        db_manager.set_active_database(selected_db)
+        reset_config()
+        st.session_state.collection_initialized = False
+        st.rerun()
+        
+    with st.sidebar.expander("Manage Databases"):
+        new_db_name = st.text_input("New Database Name", placeholder="my_new_db")
+        if st.button("Create", use_container_width=True):
+            if new_db_name:
+                try:
+                    if db_manager.create_database(new_db_name):
+                        st.success(f"Created {new_db_name}")
+                        st.rerun()
+                    else:
+                        st.error("Exists!")
+                except ValueError as e:
+                    st.error(str(e))
+        
+        st.markdown("---")
+        st.caption("Remove Database")
+        db_to_remove = st.selectbox(
+            "Select to remove", 
+            options=[db for db in databases if db != "default" and db != current_db],
+            key="remove_db_select",
+            label_visibility="collapsed",
+            placeholder="Select DB to remove"
+        )
+        
+        if db_to_remove:
+            if st.button(f"🗑️ Remove {db_to_remove}", type="primary", use_container_width=True):
+                try:
+                    if db_manager.remove_database(db_to_remove):
+                        st.success(f"Removed {db_to_remove}")
+                        st.rerun()
+                except ValueError as e:
+                    st.error(str(e))
 
     st.sidebar.markdown("---")
 

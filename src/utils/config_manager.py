@@ -402,6 +402,14 @@ class ConfigManager:
         # Vector store config
         if db_path := os.getenv("VECTOR_DB_PATH"):
             self.config.vector_store.db_path = db_path
+        else:
+            # Fallback to active database from DatabaseManager
+            try:
+                from .db_manager import get_db_manager
+                db_manager = get_db_manager()
+                self.config.vector_store.db_path = str(db_manager.get_db_path())
+            except Exception:
+                pass
 
         # Retrieval config
         if top_k := os.getenv("TOP_K"):
