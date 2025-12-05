@@ -43,7 +43,7 @@ from src.cli.utils.validators import LoadCommandInput
 @click.option(
     "-m",
     "--model",
-    default="BAAI/bge-large-en-v1.5",
+    default="google/embeddinggemma-300m",
     help="Embedding model name",
 )
 @click.option(

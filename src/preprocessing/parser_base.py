@@ -65,6 +65,7 @@ class SourceMetadata:
     source_type: str  # File type: "srt", "txt", "md", "pdf", etc.
     original_filename: str  # Original filename
     file_path: str  # Full file path
+    content_hash: str = ""  # SHA-256 hash of content
     extra: Dict[str, Any] = field(default_factory=dict)  # Format-specific metadata
 
     def to_dict(self) -> Dict[str, Any]:
@@ -76,6 +77,7 @@ class SourceMetadata:
             "source_type": self.source_type,
             "original_filename": self.original_filename,
             "file_path": self.file_path,
+            "content_hash": self.content_hash,
         }
         if self.extra:
             result["extra"] = self.extra

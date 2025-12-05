@@ -37,7 +37,7 @@ class EmbeddingConfig(BaseModel):
     """Configuration for embedding generation pipeline."""
 
     model_name: str = Field(
-        default="BAAI/bge-large-en-v1.5",
+        default="google/embeddinggemma-300m",
         description="HuggingFace model name for embeddings",
     )
     device: Literal["auto", "cpu", "cuda", "mps"] = Field(

@@ -128,7 +128,7 @@ class Indexer:
         collection: Optional[Any] = None
     ) -> int:
         """
-        Index data in batches.
+        Index data in batches with deduplication.
 
         Args:
             ids: List of document IDs
@@ -140,12 +140,18 @@ class Indexer:
             collection: Optional collection to use (uses default if None)
 
         Returns:
-            Number of documents indexed
+            Number of successfully indexed documents
         """
-        collection = collection or self.collection
+        if collection is None:
+            collection = self.collection
+
+        if not ids:
+            return 0
+
         total = len(ids)
         indexed = 0
-        
+        skipped = 0
+
         if show_progress:
             pbar = tqdm(total=total, desc="Indexing", unit="chunks")
         
@@ -157,30 +163,106 @@ class Indexer:
             batch_metadatas = metadatas[i:end_idx]
             batch_documents = documents[i:end_idx]
             
-            try:
-                # Add to collection
-                collection.add(
-                    ids=batch_ids,
-                    embeddings=batch_embeddings.tolist(),
-                    metadatas=batch_metadatas,
-                    documents=batch_documents
-                )
-                
-                indexed += len(batch_ids)
-                
-                if show_progress:
-                    pbar.update(len(batch_ids))
+            # Filter out duplicates
+            unique_ids = []
+            unique_embeddings = []
+            unique_metadatas = []
+            unique_documents = []
+            batch_skipped = 0
             
-            except Exception as e:
-                self.logger.error(
-                    f"Error indexing batch {i//batch_size + 1}: {e}",
-                    exc_info=True
-                )
-                # Continue with next batch
-                continue
+            for doc_id, emb, meta, doc_text in zip(
+                batch_ids, batch_embeddings, batch_metadatas, batch_documents
+            ):
+                source_id = meta.get('source_id', '')
+                chunk_index = meta.get('chunk_index', 0)
+                content_hash = meta.get('content_hash', '')
+                
+                # Check if this exact chunk already exists
+                # Prioritize content_hash for deduplication if available
+                where_clause = {}
+                
+                if content_hash:
+                    # Check for exact content match regardless of chunk_index
+                    # This allows deduplication of identical content across different files
+                    # or positions (e.g., standard intros)
+                    where_clause = {
+                        "content_hash": {"$eq": content_hash}
+                    }
+                else:
+                    # Fallback to source_id for legacy data or if hashing failed
+                    where_clause = {
+                        "$and": [
+                            {"source_id": {"$eq": source_id}},
+                            {"chunk_index": {"$eq": chunk_index}}
+                        ]
+                    }
+
+                try:
+                    existing = collection.get(
+                        where=where_clause,
+                        limit=1
+                    )
+                    
+                    if existing and existing.get('ids'):
+                        # Duplicate found, skip it
+                        self.logger.debug(
+                            f"Skipping duplicate chunk: source_id={source_id}, "
+                            f"chunk_index={chunk_index}"
+                        )
+                        batch_skipped += 1
+                        continue
+                
+                except Exception as e:
+                    self.logger.warning(
+                        f"Error checking for duplicate: {e}, proceeding with insertion"
+                    )
+                    # On error, proceed with insertion
+                
+                # Not a duplicate, add to unique list
+                unique_ids.append(doc_id)
+                unique_embeddings.append(emb)
+                unique_metadatas.append(meta)
+                unique_documents.append(doc_text)
+            
+            skipped += batch_skipped
+            
+            # Add only unique documents
+            if unique_ids:
+                try:
+                    collection.add(
+                        ids=unique_ids,
+                        embeddings=np.array(unique_embeddings).tolist(),
+                        metadatas=unique_metadatas,
+                        documents=unique_documents
+                    )
+                    
+                    indexed += len(unique_ids)
+                    
+                    if show_progress:
+                        pbar.update(len(unique_ids) + batch_skipped)
+                    
+                    if batch_skipped > 0:
+                        self.logger.info(
+                            f"Batch: {len(unique_ids)} added, {batch_skipped} skipped (duplicates)"
+                        )
+                
+                except Exception as e:
+                    self.logger.error(
+                        f"Error indexing batch {i//batch_size + 1}: {e}",
+                        exc_info=True
+                    )
+                    # Continue with next batch
+                    if show_progress:
+                        pbar.update(len(unique_ids) + batch_skipped)
+                    continue
         
         if show_progress:
             pbar.close()
+        
+        if skipped > 0:
+            self.logger.info(
+                f"Indexing complete: {indexed} added, {skipped} skipped (duplicates)"
+            )
         
         return indexed
     

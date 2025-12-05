@@ -180,14 +180,32 @@ class DoclingParser(DocumentParser):
     def extract_metadata(self, file_path: Path) -> SourceMetadata:
         """
         Extract metadata from file.
+        
+        Generates source_id from file content hash to prevent duplicates.
         """
         import datetime
+        import hashlib
+        import logging
+        
+        logger = logging.getLogger(__name__)
         
         stats = file_path.stat()
         modified_time = datetime.datetime.fromtimestamp(stats.st_mtime).strftime("%Y/%m/%d")
         
+        # Generate source_id from content hash (for deduplication)
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()[:16]
+            source_id = f"{file_path.stem}_{content_hash}"
+            logger.debug(f"Generated content-based source_id: {source_id}")
+        except Exception as e:
+            logger.warning(f"Could not hash file {file_path}, using filename only: {e}")
+            source_id = file_path.stem
+        
         return SourceMetadata(
-            source_id=f"{file_path.name}_{stats.st_mtime}",
+            source_id=source_id,
             title=file_path.stem,
             date=modified_time,
             source_type=file_path.suffix.lower().lstrip('.'),

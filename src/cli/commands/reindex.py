@@ -26,7 +26,7 @@ from src.cli.utils.output import console, print_error, print_success
 
 class ReindexCommandInput(BaseModel):
     """Validation model for reindex command inputs."""
-    from_model: str = Field(default="BAAI/bge-large-en-v1.5", description="Source embedding model")
+    from_model: str = Field(default="google/embeddinggemma-300m", description="Source embedding model")
     new_model: str = Field(..., description="Target embedding model")
     batch_size: int = Field(default=32, ge=1, le=256, description="Batch size for processing")
     device: str = Field(default="auto", pattern="^(auto|cpu|cuda|mps)$")
@@ -35,7 +35,7 @@ class ReindexCommandInput(BaseModel):
 @click.command()
 @click.option(
     "--from-model",
-    default="BAAI/bge-large-en-v1.5",
+    default="google/embeddinggemma-300m",
     help="Source embedding model",
     metavar="TEXT",
 )

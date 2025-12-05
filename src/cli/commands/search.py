@@ -48,7 +48,7 @@ from src.cli.utils.validators import SearchCommandInput
 @click.option(
     "-m",
     "--model",
-    default="BAAI/bge-large-en-v1.5",
+    default="google/embeddinggemma-300m",
     help="Embedding model to use",
 )
 @click.option(
@@ -135,7 +135,7 @@ def search(
             complete_config.vector_store.collection_name = system_config.COLLECTION_NAME
             
             # Auto-detect model from database if not explicitly specified
-            if model == "BAAI/bge-large-en-v1.5":  # Default value, user didn't specify
+            if model == "google/embeddinggemma-300m":  # Default value, user didn't specify
                 try:
                     temp_chroma = ChromaDBManager(db_path=complete_config.vector_store.db_path)
                     detected_model = temp_chroma.auto_detect_model()

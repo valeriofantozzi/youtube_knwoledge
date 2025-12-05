@@ -36,6 +36,7 @@ class ChunkMetadata:
     token_count: int = 0
     filename: str = ""
     content_type: str = "unknown"  # srt, text, markdown, etc.
+    content_hash: str = ""  # SHA-256 hash of content
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -52,7 +53,7 @@ class ChunkMetadata:
             data['content_type'] = 'srt'  # Legacy data is SRT
         
         # Remove any unknown fields
-        valid_fields = {'source_id', 'date', 'title', 'chunk_index', 'chunk_id', 'token_count', 'filename', 'content_type'}
+        valid_fields = {'source_id', 'date', 'title', 'chunk_index', 'chunk_id', 'token_count', 'filename', 'content_type', 'content_hash'}
         data = {k: v for k, v in data.items() if k in valid_fields}
         
         return cls(**data)
@@ -106,6 +107,7 @@ def create_metadata_from_chunk(
     title = source_metadata.get('title', '')
     filename = source_metadata.get('filename', '')
     content_type = source_metadata.get('content_type', 'unknown')
+    content_hash = source_metadata.get('content_hash', '')
     
     # Extract chunk metadata
     chunk_id = getattr(chunk, 'chunk_id', '')
@@ -120,6 +122,7 @@ def create_metadata_from_chunk(
         title = chunk_meta.get('title', title)
         filename = chunk_meta.get('filename', filename)
         content_type = chunk_meta.get('content_type', content_type)
+        content_hash = chunk_meta.get('content_hash', content_hash)
     
     return ChunkMetadata(
         source_id=source_id,
@@ -129,7 +132,8 @@ def create_metadata_from_chunk(
         chunk_id=chunk_id,
         token_count=token_count,
         filename=filename,
-        content_type=content_type
+        content_type=content_type,
+        content_hash=content_hash,
     )
 
 
@@ -154,6 +158,7 @@ def metadata_to_chromadb_format(metadata: ChunkMetadata) -> Dict[str, Any]:
         "token_count": int(metadata.token_count),
         "filename": str(metadata.filename),
         "content_type": str(metadata.content_type),
+        "content_hash": str(metadata.content_hash),
     }
 
 
@@ -178,4 +183,5 @@ def chromadb_metadata_to_schema(data: Dict[str, Any]) -> ChunkMetadata:
         token_count=int(data.get('token_count', 0)),
         filename=str(data.get('filename', '')),
         content_type=str(data.get('content_type', 'srt')),  # Default to srt for legacy data
+        content_hash=str(data.get('content_hash', '')),
     )

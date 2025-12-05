@@ -24,38 +24,38 @@ from src.vector_store.chroma_manager import ChromaDBManager
 def show_statistics(pipeline: VectorStorePipeline, console: Console):
     """Show database statistics."""
     collection = pipeline.chroma_manager.get_or_create_collection()
-    total_docs = collection.count()
+    total_chunks = collection.count()
     
     # Get sample to analyze
-    sample_size = min(1000, total_docs)
+    sample_size = min(1000, total_chunks)
     sample = collection.get(limit=sample_size)
     
     # Analyze metadata
-    video_ids = []
+    source_ids = []
     dates = []
     titles = []
     
     if sample.get('metadatas'):
         for meta in sample['metadatas']:
             if meta:
-                if 'video_id' in meta:
-                    video_ids.append(meta['video_id'])
+                if 'source_id' in meta:
+                    source_ids.append(meta['source_id'])
                 if 'date' in meta:
                     dates.append(meta['date'])
                 if 'title' in meta:
                     titles.append(meta['title'])
     
-    unique_videos = len(set(video_ids)) if video_ids else 0
-    avg_chunks_per_video = total_docs / unique_videos if unique_videos > 0 else 0
+    unique_documents = len(set(source_ids)) if source_ids else 0
+    avg_chunks_per_doc = total_chunks / unique_documents if unique_documents > 0 else 0
     
     # Create statistics table
     stats_table = Table(title="📊 Vector Database Statistics", box=box.ROUNDED)
     stats_table.add_column("Metric", style="cyan", width=30)
     stats_table.add_column("Value", style="green", justify="right")
     
-    stats_table.add_row("Total Documents", str(total_docs))
-    stats_table.add_row("Unique Videos", str(unique_videos))
-    stats_table.add_row("Avg Chunks/Video", f"{avg_chunks_per_video:.1f}")
+    stats_table.add_row("Total Chunks", str(total_chunks))
+    stats_table.add_row("Unique Documents", str(unique_documents))
+    stats_table.add_row("Avg Chunks/Document", f"{avg_chunks_per_doc:.1f}")
     
     if sample.get('embeddings') and sample['embeddings']:
         emb_dim = len(sample['embeddings'][0])

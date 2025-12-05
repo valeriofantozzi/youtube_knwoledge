@@ -5,7 +5,7 @@ Creates semantic chunks from subtitle text with overlap.
 """
 
 import re
-import uuid
+import hashlib
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 from src.utils.config import get_config
@@ -114,7 +114,8 @@ class SemanticChunker:
                         chunk_text,
                         chunk_index,
                         current_token_count,
-                        metadata
+                        metadata,
+                        source_id=metadata.get('source_id')
                     )
                     chunks.append(chunk)
                     chunk_index += 1
@@ -141,7 +142,8 @@ class SemanticChunker:
                     chunk_text,
                     chunk_index,
                     current_token_count,
-                    metadata
+                    metadata,
+                    source_id=metadata.get('source_id')
                 )
                 chunks.append(chunk)
             elif chunks:
@@ -243,28 +245,46 @@ class SemanticChunker:
         text: str,
         chunk_index: int,
         token_count: int,
-        metadata: Dict
+        metadata: Dict,
+        source_id: Optional[str] = None
     ) -> Chunk:
         """
-        Create a Chunk object.
+        Create a Chunk object with deterministic ID.
         
         Args:
             text: Chunk text
             chunk_index: Index of chunk in sequence
             token_count: Number of tokens in chunk
             metadata: Metadata dictionary
+            source_id: Source document ID (used for deterministic chunk_id)
         
         Returns:
             Chunk object
         """
-        chunk_id = str(uuid.uuid4())
+        # Generate deterministic chunk_id from source_id + chunk_index
+        # This ensures same chunk from same document always gets same ID
+        if source_id:
+            # Combine source_id and chunk_index for deterministic ID
+            deterministic_input = f"{source_id}_{chunk_index}".encode('utf-8')
+            chunk_id = hashlib.sha256(deterministic_input).hexdigest()[:16]
+        else:
+            # Fallback: create ID from text hash + chunk_index
+            text_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()[:8]
+            chunk_id = f"{text_hash}_{chunk_index}"
         
+        # Calculate chunk content hash for cross-file deduplication
+        chunk_content_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()
+        
+        # Create metadata copy and update content_hash
+        chunk_metadata = metadata.copy()
+        chunk_metadata['content_hash'] = chunk_content_hash
+
         return Chunk(
             chunk_id=chunk_id,
             text=text.strip(),
             chunk_index=chunk_index,
             token_count=token_count,
-            metadata=metadata.copy()
+            metadata=chunk_metadata
         )
     
     def chunk_subtitle_entries(

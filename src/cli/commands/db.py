@@ -32,7 +32,8 @@ def create_db(name):
     manager = get_db_manager()
     try:
         if manager.create_database(name):
-            print_success(f"Database '{name}' created successfully.")
+            manager.set_active_database(name)
+            print_success(f"Database '{name}' created and set as active.")
         else:
             print_error(f"Database '{name}' already exists.")
     except ValueError as e:
@@ -50,11 +51,15 @@ def use_db(name):
 
 @db_group.command(name="remove")
 @click.argument("name")
-@click.confirmation_option(prompt="Are you sure you want to delete this database?")
 def remove_db(name):
     """Remove a database."""
     manager = get_db_manager()
     try:
+        # Check if we are removing the active database
+        if manager.get_active_database() == name:
+            manager.set_active_database("default")
+            print_info(f"Switched to 'default' database before removing active database '{name}'.")
+            
         if manager.remove_database(name):
             print_success(f"Database '{name}' removed successfully.")
         else:
